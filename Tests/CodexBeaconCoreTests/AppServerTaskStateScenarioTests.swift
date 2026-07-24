@@ -55,7 +55,7 @@ struct AppServerTaskStateScenarioTests {
       coordinator.viewState.lights
         == [
           .init(color: .red, illumination: .off, showsRecess: true),
-          .init(color: .amber, illumination: .breathing, showsRecess: true),
+          .init(color: .amber, illumination: .steady, showsRecess: true),
           .init(color: .green, illumination: .off, showsRecess: true),
         ]
     )
@@ -207,6 +207,8 @@ struct AppServerTaskStateScenarioTests {
 
       coordinator.handle(.task(event))
 
+      #expect(coordinator.viewState.status == .monitoringUnavailable)
+      coordinator.handle(.task(.noActiveTasksObserved))
       #expect(coordinator.viewState.status == .monitoringUnavailable)
       #expect(
         coordinator.viewState.lights

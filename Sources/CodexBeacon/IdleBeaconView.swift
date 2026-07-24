@@ -108,7 +108,7 @@ private struct LightRecess: View {
     switch light.illumination {
     case .off:
       0.08
-    case .steady, .breathing:
+    case .steady:
       1
     }
   }

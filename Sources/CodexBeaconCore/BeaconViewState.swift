@@ -54,7 +54,6 @@ public enum BeaconLightColor: Equatable, Sendable {
 public enum BeaconLightIllumination: Equatable, Sendable {
   case off
   case steady
-  case breathing
 }
 
 public struct BeaconLightState: Equatable, Sendable {
@@ -136,7 +135,7 @@ public struct BeaconViewState: Equatable, Sendable {
     let redIllumination: BeaconLightIllumination =
       status == .monitoringUnavailable ? .steady : .off
     let amberIllumination: BeaconLightIllumination =
-      status == .working ? .breathing : .off
+      status == .working ? .steady : .off
 
     return [
       .init(color: .red, illumination: redIllumination, showsRecess: true),

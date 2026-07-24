@@ -1,8 +1,10 @@
 # Codex Beacon
 
-Codex Beacon is a native macOS accessory application. The first vertical slice
-shows a single, non-activating idle Beacon: a near-black capsule with three
-recessed, unlit status lamps and a neutral quota track.
+Codex Beacon is a native macOS accessory application. The current vertical
+slice shows a single, non-activating Beacon: a near-black capsule whose task
+lamp can distinguish monitoring unavailable, working, and idle states from
+controlled App Server protocol scenarios. It fails closed to red until current
+monitoring evidence is available.
 
 ## Requirements
 

@@ -4,8 +4,8 @@ import Testing
 
 @MainActor
 struct IdleBeaconScenarioTests {
-  @Test("application launch presents the user-visible idle Beacon")
-  func applicationLaunchPresentsIdleBeacon() {
+  @Test("application launch without monitoring evidence fails closed")
+  func applicationLaunchPresentsMonitoringUnavailableBeacon() {
     let coordinator = AppCoordinator()
 
     coordinator.start()
@@ -20,11 +20,12 @@ struct IdleBeaconScenarioTests {
             tone: .nearBlack
           ),
           lights: [
-            .init(color: .red, illumination: .off, showsRecess: true),
+            .init(color: .red, illumination: .steady, showsRecess: true),
             .init(color: .amber, illumination: .off, showsRecess: true),
             .init(color: .green, illumination: .off, showsRecess: true),
           ],
-          quotaTrack: .init(style: .neutral)
+          quotaTrack: .init(style: .neutral),
+          status: .monitoringUnavailable
         )
     )
     #expect(coordinator.drainEffects() == [.showBeacon])
