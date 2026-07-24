@@ -12,7 +12,7 @@ struct CoordinatorEventScenarioTests {
 
     coordinator.start()
     _ = coordinator.drainEffects()
-    coordinator.handle(.task(.snapshot([])))
+    coordinator.handle(.task(.noActiveTasksObserved))
     coordinator.handle(.time(.advanced(to: observationTime)))
     coordinator.handle(.system(.reduceMotionChanged(true)))
     coordinator.handle(.system(.visibilityChanged(false)))

@@ -6,14 +6,7 @@ struct IdleBeaconView: View {
 
   var body: some View {
     ZStack {
-      Capsule()
-        .fill(.ultraThinMaterial)
-
-      Capsule()
-        .fill(Color(red: 0.035, green: 0.039, blue: 0.045).opacity(0.91))
-
-      Capsule()
-        .strokeBorder(Color.white.opacity(0.14), lineWidth: 1)
+      BeaconSurface(surface: state.surface)
 
       VStack(spacing: 15) {
         ForEach(Array(state.lights.enumerated()), id: \.offset) { _, light in
@@ -22,7 +15,7 @@ struct IdleBeaconView: View {
 
         Spacer(minLength: 4)
 
-        NeutralQuotaTrack()
+        QuotaTrack(state: state.quotaTrack)
       }
       .padding(.horizontal, 13)
       .padding(.top, 22)
@@ -32,9 +25,48 @@ struct IdleBeaconView: View {
       width: state.size.dimensions.width,
       height: state.size.dimensions.height
     )
+    .transaction { transaction in
+      if state.reducesMotion {
+        transaction.animation = nil
+      }
+    }
     .accessibilityElement(children: .ignore)
     .accessibilityLabel("Codex Beacon")
-    .accessibilityValue("Idle")
+    .accessibilityValue(accessibilityValue)
+  }
+
+  private var accessibilityValue: String {
+    switch state.status {
+    case .idle:
+      "Idle"
+    }
+  }
+}
+
+private struct BeaconSurface: View {
+  let surface: BeaconSurfaceState
+
+  var body: some View {
+    switch surface.shape {
+    case .capsule:
+      ZStack {
+        Capsule()
+          .fill(.ultraThinMaterial)
+
+        Capsule()
+          .fill(surfaceColor.opacity(0.91))
+
+        Capsule()
+          .strokeBorder(Color.white.opacity(0.14), lineWidth: 1)
+      }
+    }
+  }
+
+  private var surfaceColor: Color {
+    switch surface.tone {
+    case .nearBlack:
+      Color(red: 0.035, green: 0.039, blue: 0.045)
+    }
   }
 }
 
@@ -46,12 +78,14 @@ private struct LightRecess: View {
       .fill(Color.black.opacity(0.56))
       .overlay {
         Circle()
-          .fill(color.opacity(0.08))
+          .fill(color.opacity(illuminationOpacity))
           .padding(3)
       }
       .overlay {
-        Circle()
-          .strokeBorder(color.opacity(0.19), lineWidth: 1)
+        if light.showsRecess {
+          Circle()
+            .strokeBorder(color.opacity(0.19), lineWidth: 1)
+        }
       }
       .overlay {
         Circle()
@@ -60,6 +94,13 @@ private struct LightRecess: View {
       }
       .frame(width: 32, height: 32)
       .shadow(color: .black.opacity(0.8), radius: 2, y: 1)
+  }
+
+  private var illuminationOpacity: Double {
+    switch light.illumination {
+    case .off:
+      0.08
+    }
   }
 
   private var color: Color {
@@ -74,14 +115,23 @@ private struct LightRecess: View {
   }
 }
 
-private struct NeutralQuotaTrack: View {
+private struct QuotaTrack: View {
+  let state: QuotaTrackState
+
   var body: some View {
     Capsule()
-      .fill(Color.white.opacity(0.12))
+      .fill(trackColor)
       .overlay {
         Capsule()
           .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
       }
       .frame(width: 8, height: 52)
+  }
+
+  private var trackColor: Color {
+    switch state.style {
+    case .neutral:
+      Color.white.opacity(0.12)
+    }
   }
 }

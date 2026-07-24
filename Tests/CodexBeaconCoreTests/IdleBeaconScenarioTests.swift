@@ -21,7 +21,7 @@ struct IdleBeaconScenarioTests {
             .init(color: .amber, illumination: .off, showsRecess: true),
             .init(color: .green, illumination: .off, showsRecess: true),
           ],
-          quotaTrack: .init(style: .neutral, remainingFraction: nil)
+          quotaTrack: .init(style: .neutral)
         )
     )
     #expect(coordinator.drainEffects() == [.showBeacon])

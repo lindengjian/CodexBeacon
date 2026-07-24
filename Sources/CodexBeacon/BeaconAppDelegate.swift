@@ -8,8 +8,6 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
   private var panel: BeaconPanel?
 
   func applicationDidFinishLaunching(_ notification: Notification) {
-    NSApplication.shared.setActivationPolicy(.accessory)
-
     coordinator.start()
     present(coordinator.viewState)
     perform(coordinator.drainEffects())
