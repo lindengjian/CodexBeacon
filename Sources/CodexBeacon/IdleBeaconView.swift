@@ -7,6 +7,10 @@ struct IdleBeaconView: View {
   var body: some View {
     ZStack {
       BeaconSurface(surface: state.surface)
+        .frame(
+          width: state.size.dimensions.width,
+          height: state.size.dimensions.height
+        )
 
       VStack(spacing: 15) {
         ForEach(Array(state.lights.enumerated()), id: \.offset) { _, light in
@@ -48,15 +52,15 @@ private struct BeaconSurface: View {
 
   var body: some View {
     switch surface.shape {
-    case .capsule:
+    case .roundedRectangle(let cornerRadius):
       ZStack {
-        Capsule()
+        RoundedRectangle(cornerRadius: cornerRadius, style: .circular)
           .fill(.ultraThinMaterial)
 
-        Capsule()
+        RoundedRectangle(cornerRadius: cornerRadius, style: .circular)
           .fill(surfaceColor.opacity(0.91))
 
-        Capsule()
+        RoundedRectangle(cornerRadius: cornerRadius, style: .circular)
           .strokeBorder(Color.white.opacity(0.14), lineWidth: 1)
       }
     }
