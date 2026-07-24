@@ -108,10 +108,15 @@ struct AppServerTaskStateScenarioTests {
         continue
       }
 
-      let status =
-        request.threadID == "visible-idle"
-        ? #"{"type":"idle"}"#
-        : #"{"type":"active","activeFlags":[]}"#
+      let status: String
+      switch request.threadID {
+      case "visible-idle":
+        status = #"{"type":"idle"}"#
+      case "system":
+        status = #"{"type":"notLoaded"}"#
+      default:
+        status = #"{"type":"active","activeFlags":[]}"#
+      }
       coordinator.handle(
         .task(
           .appServerMessage(
@@ -207,8 +212,6 @@ struct AppServerTaskStateScenarioTests {
 
       coordinator.handle(.task(event))
 
-      #expect(coordinator.viewState.status == .monitoringUnavailable)
-      coordinator.handle(.task(.noActiveTasksObserved))
       #expect(coordinator.viewState.status == .monitoringUnavailable)
       #expect(
         coordinator.viewState.lights
@@ -445,5 +448,41 @@ struct AppServerTaskStateScenarioTests {
     )
 
     #expect(coordinator.viewState.status == .working)
+  }
+
+  @Test("unrelated App Server notifications do not invalidate task evidence")
+  func unrelatedNotificationDoesNotChangeAggregate() {
+    let coordinator = AppCoordinator()
+
+    coordinator.handle(
+      .task(.monitoringConnectionEstablished(protocolCompatible: true))
+    )
+    let loadedListRequest = coordinator.drainAppServerRequests().first!
+    coordinator.handle(
+      .task(
+        .appServerMessage(
+          """
+          {"id":\(loadedListRequest.id),"result":{"data":[]}}
+          """
+        )
+      )
+    )
+    #expect(coordinator.viewState.status == .idle)
+
+    coordinator.handle(
+      .task(
+        .appServerMessage(
+          """
+          {
+            "method": "account/rateLimits/updated",
+            "params": {"rateLimits": {}}
+          }
+          """
+        )
+      )
+    )
+
+    #expect(coordinator.viewState.status == .idle)
+    #expect(coordinator.drainAppServerRequests().isEmpty)
   }
 }

@@ -12,7 +12,19 @@ struct CoordinatorEventScenarioTests {
 
     coordinator.start()
     _ = coordinator.drainEffects()
-    coordinator.handle(.task(.noActiveTasksObserved))
+    coordinator.handle(
+      .task(.monitoringConnectionEstablished(protocolCompatible: true))
+    )
+    let loadedListRequest = coordinator.drainAppServerRequests().first!
+    coordinator.handle(
+      .task(
+        .appServerMessage(
+          """
+          {"id":\(loadedListRequest.id),"result":{"data":[]}}
+          """
+        )
+      )
+    )
     coordinator.handle(.time(.advanced(to: observationTime)))
     coordinator.handle(.system(.reduceMotionChanged(true)))
     coordinator.handle(.system(.visibilityChanged(false)))

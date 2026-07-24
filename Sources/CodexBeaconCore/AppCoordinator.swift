@@ -25,11 +25,6 @@ public final class AppCoordinator {
 
   public func handle(_ event: ApplicationEvent) {
     switch event {
-    case .task(.noActiveTasksObserved):
-      guard !taskMonitor.hasStarted else {
-        return
-      }
-      viewState.present(.idle)
     case .task(.monitoringConnectionEstablished(let protocolCompatible)):
       viewState.present(
         taskMonitor.connectionEstablished(

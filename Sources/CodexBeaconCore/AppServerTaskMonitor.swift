@@ -5,9 +5,13 @@ public struct AppServerRequest: Equatable, Sendable {
   public let method: String
   public let threadID: String?
 
-  public init(id: Int, method: String, threadID: String? = nil) {
+  fileprivate init(
+    id: Int,
+    method: AppServerRequestMethod,
+    threadID: String? = nil
+  ) {
     self.id = id
-    self.method = method
+    self.method = method.rawValue
     self.threadID = threadID
   }
 }
@@ -19,10 +23,6 @@ struct AppServerTaskMonitor {
   private var outstandingInitialReads: Set<String> = []
   private var state = MonitoringState.notStarted
   private var nextRequestID = 1
-
-  var hasStarted: Bool {
-    state != .notStarted
-  }
 
   mutating func connectionEstablished(
     protocolCompatible: Bool
@@ -59,8 +59,10 @@ struct AppServerTaskMonitor {
     do {
       let header = try JSONDecoder().decode(MessageHeader.self, from: data)
       if let method = header.method {
-        guard method == "thread/status/changed" else {
-          return fail()
+        guard
+          AppServerNotificationMethod(rawValue: method) == .threadStatusChanged
+        else {
+          return currentStatus
         }
         return try handleStatusNotification(data)
       }
@@ -91,7 +93,7 @@ struct AppServerTaskMonitor {
   private mutating func requestLoadedThreads() {
     let request = AppServerRequest(
       id: nextRequestID,
-      method: "thread/loaded/list"
+      method: .loadedThreads
     )
     nextRequestID += 1
     pendingRequests[request.id] = .loadedThreads
@@ -101,7 +103,7 @@ struct AppServerTaskMonitor {
   private mutating func requestThread(_ threadID: String) {
     let request = AppServerRequest(
       id: nextRequestID,
-      method: "thread/read",
+      method: .readThread,
       threadID: threadID
     )
     nextRequestID += 1
@@ -140,14 +142,22 @@ struct AppServerTaskMonitor {
     guard thread.id == expectedThreadID else {
       return fail()
     }
-    guard let isWorking = workingState(from: thread.status) else {
-      return fail()
-    }
-
     let isUserVisibleRoot =
       !thread.ephemeral
       && thread.threadSource != "system"
       && thread.parentThreadId == nil
+    let isWorking: Bool
+    if isUserVisibleRoot {
+      guard
+        let status = thread.status,
+        let workingState = workingState(from: status)
+      else {
+        return fail()
+      }
+      isWorking = workingState
+    } else {
+      isWorking = false
+    }
     observedThreads[thread.id] = ObservedThread(
       isUserVisibleRoot: isUserVisibleRoot,
       isWorking: isWorking
@@ -189,18 +199,24 @@ struct AppServerTaskMonitor {
   }
 
   private func workingState(from status: ProtocolThreadStatus) -> Bool? {
-    switch status.type {
-    case "idle":
+    guard let statusType = ProtocolThreadStatusType(rawValue: status.type) else {
+      return nil
+    }
+
+    switch statusType {
+    case .idle:
       return false
-    case "active":
+    case .active:
       guard let flags = status.activeFlags else {
         return nil
       }
-      return !flags.contains("waitingOnApproval")
-        && !flags.contains("waitingOnUserInput")
-    case "notLoaded", "systemError":
-      return nil
-    default:
+      let activeFlags = flags.compactMap(AppServerActiveFlag.init(rawValue:))
+      guard activeFlags.count == flags.count else {
+        return nil
+      }
+      return !activeFlags.contains(.waitingOnApproval)
+        && !activeFlags.contains(.waitingOnUserInput)
+    case .notLoaded, .systemError:
       return nil
     }
   }
@@ -209,6 +225,10 @@ struct AppServerTaskMonitor {
     observedThreads.values.contains {
       $0.isUserVisibleRoot && $0.isWorking
     } ? .working : .idle
+  }
+
+  private var currentStatus: BeaconStatus {
+    state == .available ? aggregateStatus : .monitoringUnavailable
   }
 
   private var hasPendingThreadRead: Bool {
@@ -241,6 +261,27 @@ struct AppServerTaskMonitor {
 private enum PendingRequest {
   case loadedThreads
   case thread(String)
+}
+
+private enum AppServerRequestMethod: String {
+  case loadedThreads = "thread/loaded/list"
+  case readThread = "thread/read"
+}
+
+private enum AppServerNotificationMethod: String {
+  case threadStatusChanged = "thread/status/changed"
+}
+
+private enum ProtocolThreadStatusType: String {
+  case notLoaded
+  case idle
+  case systemError
+  case active
+}
+
+private enum AppServerActiveFlag: String {
+  case waitingOnApproval
+  case waitingOnUserInput
 }
 
 private struct ObservedThread {
@@ -281,7 +322,7 @@ private struct ProtocolThread: Decodable {
   let threadSource: String?
   let ephemeral: Bool
   let parentThreadId: String?
-  let status: ProtocolThreadStatus
+  let status: ProtocolThreadStatus?
 }
 
 private struct ProtocolThreadStatus: Decodable {

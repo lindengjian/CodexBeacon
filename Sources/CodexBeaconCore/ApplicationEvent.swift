@@ -1,7 +1,6 @@
 import Foundation
 
 public enum TaskEvent: Equatable, Sendable {
-  case noActiveTasksObserved
   case monitoringConnectionEstablished(protocolCompatible: Bool)
   case monitoringConnectionFailed
   case monitoringObservationBecameStale
