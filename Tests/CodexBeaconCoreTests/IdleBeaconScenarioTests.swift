@@ -15,7 +15,10 @@ struct IdleBeaconScenarioTests {
         == BeaconViewState(
           isVisible: true,
           size: .standard,
-          surface: .init(shape: .capsule, tone: .nearBlack),
+          surface: .init(
+            shape: .roundedRectangle(cornerRadius: 30),
+            tone: .nearBlack
+          ),
           lights: [
             .init(color: .red, illumination: .off, showsRecess: true),
             .init(color: .amber, illumination: .off, showsRecess: true),

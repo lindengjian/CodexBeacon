@@ -26,7 +26,7 @@ public enum BeaconStatus: Equatable, Sendable {
 }
 
 public enum BeaconShape: Equatable, Sendable {
-  case capsule
+  case roundedRectangle(cornerRadius: Double)
 }
 
 public enum BeaconTone: Equatable, Sendable {
@@ -114,7 +114,7 @@ public struct BeaconViewState: Equatable, Sendable {
   public static let idle = BeaconViewState(
     isVisible: true,
     size: .standard,
-    surface: .init(shape: .capsule, tone: .nearBlack),
+    surface: .init(shape: .roundedRectangle(cornerRadius: 30), tone: .nearBlack),
     lights: [
       .init(color: .red, illumination: .off, showsRecess: true),
       .init(color: .amber, illumination: .off, showsRecess: true),
