@@ -43,6 +43,10 @@ struct IdleBeaconView: View {
     switch state.status {
     case .idle:
       "Idle"
+    case .working:
+      "Working"
+    case .monitoringUnavailable:
+      "Monitoring unavailable"
     }
   }
 }
@@ -104,6 +108,8 @@ private struct LightRecess: View {
     switch light.illumination {
     case .off:
       0.08
+    case .steady, .breathing:
+      1
     }
   }
 

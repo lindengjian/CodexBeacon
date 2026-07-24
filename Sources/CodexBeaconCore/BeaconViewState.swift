@@ -23,6 +23,8 @@ public struct BeaconDimensions: Equatable, Sendable {
 
 public enum BeaconStatus: Equatable, Sendable {
   case idle
+  case working
+  case monitoringUnavailable
 }
 
 public enum BeaconShape: Equatable, Sendable {
@@ -51,6 +53,8 @@ public enum BeaconLightColor: Equatable, Sendable {
 
 public enum BeaconLightIllumination: Equatable, Sendable {
   case off
+  case steady
+  case breathing
 }
 
 public struct BeaconLightState: Equatable, Sendable {
@@ -85,7 +89,7 @@ public struct BeaconViewState: Equatable, Sendable {
   public var isVisible: Bool
   public let size: BeaconSize
   public let surface: BeaconSurfaceState
-  public let lights: [BeaconLightState]
+  public private(set) var lights: [BeaconLightState]
   public let quotaTrack: QuotaTrackState
   public var status: BeaconStatus
   public var lastUpdatedAt: Date?
@@ -122,4 +126,22 @@ public struct BeaconViewState: Equatable, Sendable {
     ],
     quotaTrack: .init(style: .neutral)
   )
+
+  mutating func present(_ status: BeaconStatus) {
+    self.status = status
+    lights = Self.lights(for: status)
+  }
+
+  private static func lights(for status: BeaconStatus) -> [BeaconLightState] {
+    let redIllumination: BeaconLightIllumination =
+      status == .monitoringUnavailable ? .steady : .off
+    let amberIllumination: BeaconLightIllumination =
+      status == .working ? .breathing : .off
+
+    return [
+      .init(color: .red, illumination: redIllumination, showsRecess: true),
+      .init(color: .amber, illumination: amberIllumination, showsRecess: true),
+      .init(color: .green, illumination: .off, showsRecess: true),
+    ]
+  }
 }
