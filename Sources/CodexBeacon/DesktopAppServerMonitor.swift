@@ -131,7 +131,7 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
       thread["source"] as? String == "vscode",
       thread["ephemeral"] as? Bool == false,
       thread["threadSource"] as? String != "system",
-      thread["parentThreadId"] == nil
+      thread["parentThreadId"] == nil || thread["parentThreadId"] is NSNull
     {
       sawSharedDesktopRuntime = true
       compatibilityAdapter.sharedRuntimeEvidenceObserved()
