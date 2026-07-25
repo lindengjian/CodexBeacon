@@ -20,12 +20,16 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
   }
 
   private func handleTaskEvent(_ event: TaskEvent) {
+    coordinator.handle(.time(.advanced(to: Date())))
     coordinator.handle(.task(event))
-    panel?.contentView = NSHostingView(rootView: IdleBeaconView(state: coordinator.viewState))
+    updatePanelContent()
   }
 
   private func present(_ state: BeaconViewState) {
-    let panel = BeaconPanel(state: state)
+    let panel = BeaconPanel(
+      state: state,
+      onActivate: { [weak self] in self?.handleBeaconActivation() }
+    )
     self.panel = panel
     position(panel)
   }
@@ -37,7 +41,38 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
         panel?.orderFrontRegardless()
       case .hideBeacon:
         panel?.orderOut(nil)
+      case .activateCodex(let threadID):
+        activateCodex(threadID: threadID)
       }
+    }
+  }
+
+  private func handleBeaconActivation() {
+    coordinator.handle(.user(.beaconActivated))
+    updatePanelContent()
+    perform(coordinator.drainEffects())
+  }
+
+  private func updatePanelContent() {
+    panel?.contentView = NSHostingView(
+      rootView: IdleBeaconView(
+        state: coordinator.viewState,
+        onActivate: { [weak self] in self?.handleBeaconActivation() }
+      )
+    )
+  }
+
+  private func activateCodex(threadID: String?) {
+    let route = URL(string: "codex://threads/\(threadID ?? "new")")!
+    guard let applicationURL = NSWorkspace.shared.urlForApplication(toOpen: route) else {
+      NSWorkspace.shared.open(route)
+      return
+    }
+    NSWorkspace.shared.openApplication(
+      at: applicationURL,
+      configuration: .init()
+    ) { _, _ in
+      NSWorkspace.shared.open(route)
     }
   }
 

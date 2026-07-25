@@ -16,8 +16,13 @@ public enum SystemEnvironmentEvent: Equatable, Sendable {
   case visibilityChanged(Bool)
 }
 
+public enum UserEvent: Equatable, Sendable {
+  case beaconActivated
+}
+
 public enum ApplicationEvent: Equatable, Sendable {
   case task(TaskEvent)
   case time(TimeEvent)
   case system(SystemEnvironmentEvent)
+  case user(UserEvent)
 }

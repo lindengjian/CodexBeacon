@@ -1,6 +1,9 @@
+import Foundation
+
 public enum BeaconEffect: Equatable, Sendable {
   case showBeacon
   case hideBeacon
+  case activateCodex(threadID: String?)
 }
 
 @MainActor
@@ -10,6 +13,7 @@ public final class AppCoordinator {
   private var effects: [BeaconEffect] = []
   private var taskMonitor = AppServerTaskMonitor()
   private var hasStarted = false
+  private var observationTime = Date()
 
   public init() {}
 
@@ -26,18 +30,19 @@ public final class AppCoordinator {
   public func handle(_ event: ApplicationEvent) {
     switch event {
     case .task(.monitoringConnectionEstablished(let protocolCompatible)):
-      viewState.present(
-        taskMonitor.connectionEstablished(
-          protocolCompatible: protocolCompatible
-        )
+      presentTaskStatus(
+        taskMonitor.connectionEstablished(protocolCompatible: protocolCompatible)
       )
     case .task(.monitoringConnectionFailed):
-      viewState.present(taskMonitor.connectionFailed())
+      presentTaskStatus(taskMonitor.connectionFailed())
     case .task(.monitoringObservationBecameStale):
-      viewState.present(taskMonitor.observationBecameStale())
+      presentTaskStatus(taskMonitor.observationBecameStale())
     case .task(.appServerMessage(let message)):
-      viewState.present(taskMonitor.handle(message: message))
+      presentTaskStatus(
+        taskMonitor.handle(message: message, observedAt: observationTime)
+      )
     case .time(.advanced(let date)):
+      observationTime = date
       viewState.lastUpdatedAt = date
     case .system(.reduceMotionChanged(let reducesMotion)):
       viewState.reducesMotion = reducesMotion
@@ -48,6 +53,11 @@ public final class AppCoordinator {
 
       viewState.isVisible = isVisible
       effects.append(isVisible ? .showBeacon : .hideBeacon)
+    case .user(.beaconActivated):
+      let waitingThreadID = taskMonitor.waitingTasks.first?.threadID
+      taskMonitor.confirmCompletions()
+      presentTaskStatus(taskMonitor.status)
+      effects.append(.activateCodex(threadID: waitingThreadID))
     }
   }
 
@@ -58,5 +68,13 @@ public final class AppCoordinator {
 
   public func drainAppServerRequests() -> [AppServerRequest] {
     taskMonitor.drainRequests()
+  }
+
+  private func presentTaskStatus(_ status: BeaconStatus) {
+    viewState.present(
+      status,
+      waitingTasks: taskMonitor.waitingTasks,
+      unconfirmedCompletionTaskIDs: taskMonitor.unconfirmedCompletionTaskIDs
+    )
   }
 }

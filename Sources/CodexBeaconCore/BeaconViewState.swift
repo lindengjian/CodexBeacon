@@ -29,6 +29,16 @@ public enum BeaconStatus: Equatable, Sendable {
   case monitoringUnavailable
 }
 
+public struct WaitingTask: Equatable, Sendable {
+  public let threadID: String
+  public let firstObservedAt: Date
+
+  public init(threadID: String, firstObservedAt: Date) {
+    self.threadID = threadID
+    self.firstObservedAt = firstObservedAt
+  }
+}
+
 public enum BeaconShape: Equatable, Sendable {
   case roundedRectangle(cornerRadius: Double)
 }
@@ -95,6 +105,8 @@ public struct BeaconViewState: Equatable, Sendable {
   public var status: BeaconStatus
   public var lastUpdatedAt: Date?
   public var reducesMotion: Bool
+  public private(set) var waitingTasks: [WaitingTask]
+  public private(set) var unconfirmedCompletionTaskIDs: Set<String>
 
   public init(
     isVisible: Bool,
@@ -104,7 +116,9 @@ public struct BeaconViewState: Equatable, Sendable {
     quotaTrack: QuotaTrackState,
     status: BeaconStatus = .idle,
     lastUpdatedAt: Date? = nil,
-    reducesMotion: Bool = false
+    reducesMotion: Bool = false,
+    waitingTasks: [WaitingTask] = [],
+    unconfirmedCompletionTaskIDs: Set<String> = []
   ) {
     self.isVisible = isVisible
     self.size = size
@@ -114,6 +128,8 @@ public struct BeaconViewState: Equatable, Sendable {
     self.status = status
     self.lastUpdatedAt = lastUpdatedAt
     self.reducesMotion = reducesMotion
+    self.waitingTasks = waitingTasks
+    self.unconfirmedCompletionTaskIDs = unconfirmedCompletionTaskIDs
   }
 
   public static let idle = BeaconViewState(
@@ -128,8 +144,14 @@ public struct BeaconViewState: Equatable, Sendable {
     quotaTrack: .init(style: .neutral)
   )
 
-  mutating func present(_ status: BeaconStatus) {
+  mutating func present(
+    _ status: BeaconStatus,
+    waitingTasks: [WaitingTask] = [],
+    unconfirmedCompletionTaskIDs: Set<String> = []
+  ) {
     self.status = status
+    self.waitingTasks = waitingTasks
+    self.unconfirmedCompletionTaskIDs = unconfirmedCompletionTaskIDs
     lights = Self.lights(for: status)
   }
 

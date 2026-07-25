@@ -7,7 +7,7 @@ final class BeaconPanel: NSPanel {
   override var canBecomeKey: Bool { false }
   override var canBecomeMain: Bool { false }
 
-  init(state: BeaconViewState) {
+  init(state: BeaconViewState, onActivate: @escaping () -> Void) {
     let dimensions = state.size.dimensions
     let contentRect = NSRect(
       x: 0,
@@ -34,6 +34,8 @@ final class BeaconPanel: NSPanel {
     hasShadow = true
     isReleasedWhenClosed = false
     animationBehavior = .none
-    contentView = NSHostingView(rootView: IdleBeaconView(state: state))
+    contentView = NSHostingView(
+      rootView: IdleBeaconView(state: state, onActivate: onActivate)
+    )
   }
 }

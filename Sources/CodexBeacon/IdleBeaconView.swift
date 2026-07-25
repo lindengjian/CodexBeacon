@@ -3,6 +3,7 @@ import SwiftUI
 
 struct IdleBeaconView: View {
   let state: BeaconViewState
+  let onActivate: () -> Void
 
   var body: some View {
     ZStack {
@@ -37,6 +38,7 @@ struct IdleBeaconView: View {
     .accessibilityElement(children: .ignore)
     .accessibilityLabel("Codex Beacon")
     .accessibilityValue(accessibilityValue)
+    .onTapGesture(perform: onActivate)
   }
 
   private var accessibilityValue: String {
