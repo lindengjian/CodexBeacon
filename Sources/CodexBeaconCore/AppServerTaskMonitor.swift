@@ -157,6 +157,7 @@ struct AppServerTaskMonitor {
     }
     let isUserVisibleRoot =
       !thread.ephemeral
+      && thread.source == "vscode"
       && thread.threadSource != "system"
       && thread.parentThreadId == nil
     let taskState: ObservedTaskState
@@ -404,6 +405,7 @@ private struct ThreadReadResult: Decodable {
 
 private struct ProtocolThread: Decodable {
   let id: String
+  let source: String?
   let threadSource: String?
   let ephemeral: Bool
   let parentThreadId: String?
