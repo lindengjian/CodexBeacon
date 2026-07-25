@@ -16,8 +16,11 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
   private let requestsProvider: RequestsProvider
   private let socketPath: String
   private let bundledCLIURL: URL?
+  private let compatibilityAdapter = DesktopDaemonCompatibilityAdapter()
+  private let diagnosticStore = LocalDiagnosticStore()
   private var client: UnixWebSocketClient?
   private var didInitialize = false
+  private var sawSharedDesktopRuntime = false
 
   private(set) var diagnostic = "Task monitoring has not started."
 
@@ -42,13 +45,22 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
       fail("Codex Desktop's bundled CLI is not executable.")
       return
     }
-    guard FileManager.default.fileExists(atPath: socketPath) else {
-      fail("The shared Codex App Server socket is unavailable. Repair the Desktop shared-daemon integration or restart Codex Desktop.")
-      return
-    }
-
     DispatchQueue.global(qos: .userInitiated).async { [weak self] in
       guard let self else { return }
+      guard let cliVersion = Self.cliVersion(at: bundledCLIURL) else {
+        DispatchQueue.main.async { self.fail("The bundled Codex CLI version could not be read.") }
+        return
+      }
+      guard FileManager.default.fileExists(atPath: self.socketPath) else {
+        let adoptionFailure = self.compatibilityAdapter.prepare(
+          bundledCLIURL: bundledCLIURL,
+          cliVersion: cliVersion
+        )
+        DispatchQueue.main.async {
+          self.fail(adoptionFailure ?? "The shared daemon was prepared. Fully quit and reopen Codex Desktop, then reopen Codex Beacon to validate runtime sharing.")
+        }
+        return
+      }
       guard let versions = Self.commandOutput(
         at: bundledCLIURL,
         arguments: ["app-server", "daemon", "version"]
@@ -69,6 +81,7 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
     client?.close()
     client = nil
     didInitialize = false
+    sawSharedDesktopRuntime = false
   }
 
   private func connect() {
@@ -96,14 +109,28 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
       client?.send(["method": "initialized"])
       deliver(.monitoringConnectionEstablished(protocolCompatible: true))
       flushRequests()
+      DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
+        guard let self, self.didInitialize, !self.sawSharedDesktopRuntime else { return }
+        self.fail("No loaded Codex Desktop runtime thread was observed. The reachable daemon is not accepted as shared Desktop state.")
+      }
       return
     }
 
     // A request from the server intentionally has no response. Beacon is an
     // observer and must not take ownership of Desktop approvals or input.
     if object["id"] != nil, object["method"] != nil {
-      diagnostic = "Ignored a server request while passively observing Desktop."
+      fail("The shared daemon sent this passive observer a request requiring a response. Monitoring stopped without responding.")
       return
+    }
+
+    if let thread = ((object["result"] as? [String: Any])?["thread"] as? [String: Any]),
+      thread["source"] as? String == "vscode",
+      thread["ephemeral"] as? Bool == false,
+      thread["threadSource"] as? String != "system",
+      thread["parentThreadId"] == nil
+    {
+      sawSharedDesktopRuntime = true
+      compatibilityAdapter.sharedRuntimeEvidenceObserved()
     }
 
     deliver(.appServerMessage(message))
@@ -130,6 +157,7 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
 
   private func fail(_ reason: String) {
     diagnostic = reason
+    diagnosticStore.record(reason)
     Logger(subsystem: "com.codexbeacon", category: "task-monitoring").error("\(reason, privacy: .public)")
     client?.close()
     client = nil
@@ -166,6 +194,11 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
     } catch {
       return nil
     }
+  }
+
+  private static func cliVersion(at executable: URL) -> String? {
+    guard let output = commandOutput(at: executable, arguments: ["--version"]) else { return nil }
+    return output.split(whereSeparator: { $0 == " " || $0 == "\n" }).last.map(String.init)
   }
 
   private static func daemonVersionsMatch(_ output: String) -> Bool {
