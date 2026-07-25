@@ -66,8 +66,12 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
         arguments: ["app-server", "daemon", "version"]
       ), Self.daemonVersionsMatch(versions)
       else {
+        let adoptionFailure = self.compatibilityAdapter.prepare(
+          bundledCLIURL: bundledCLIURL,
+          cliVersion: cliVersion
+        )
         DispatchQueue.main.async {
-          self.fail("The bundled CLI and shared App Server versions are unavailable or incompatible.")
+          self.fail(adoptionFailure ?? "The shared daemon was prepared after its existing control socket failed validation. Fully quit and reopen Codex Desktop, then reopen Codex Beacon to validate runtime sharing.")
         }
         return
       }
