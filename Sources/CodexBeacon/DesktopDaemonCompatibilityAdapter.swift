@@ -39,7 +39,7 @@ final class DesktopDaemonCompatibilityAdapter {
       let priorValue = launchctlEnvironmentValue()
       try persist(AdoptionState(priorEnvironmentValue: priorValue))
       try writeLaunchAgent(for: bundledCLIURL)
-      try runLaunchctl(["bootout", userDomain, Self.label], allowFailure: true)
+      try runLaunchctl(["bootout", serviceTarget], allowFailure: true)
       try runLaunchctl(["bootstrap", userDomain, launchAgentURL.path])
       try runLaunchctl(["setenv", Self.environmentKey, "1"])
       diagnosticStore.record("Shared-daemon compatibility adapter prepared. Fully quit and reopen Codex Desktop, then reopen Codex Beacon to validate shared runtime state.")
@@ -55,7 +55,7 @@ final class DesktopDaemonCompatibilityAdapter {
   /// Restores the exact launchd environment value that existed before Beacon
   /// installed its adapter, and removes only Beacon's labelled LaunchAgent.
   func rollback() {
-    _ = try? runLaunchctl(["bootout", userDomain, Self.label], allowFailure: true)
+    _ = try? runLaunchctl(["bootout", serviceTarget], allowFailure: true)
     try? fileManager.removeItem(at: launchAgentURL)
     if let state = try? loadState() {
       if let priorValue = state.priorEnvironmentValue {
@@ -79,6 +79,7 @@ final class DesktopDaemonCompatibilityAdapter {
   var diagnosticPath: URL { diagnosticStore.fileURL }
 
   private var userDomain: String { "gui/\(getuid())" }
+  private var serviceTarget: String { "\(userDomain)/\(Self.label)" }
 
   private func writeLaunchAgent(for bundledCLIURL: URL) throws {
     let programArguments = [

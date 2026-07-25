@@ -288,7 +288,13 @@ private final class UnixWebSocketClient: @unchecked Sendable {
         "capabilities": ["experimentalApi": true],
       ]])
     }
-    while let message = nextTextMessage() { received(message) }
+    while !buffer.isEmpty {
+      let byteCountBeforeParsing = buffer.count
+      if let message = nextTextMessage() {
+        received(message)
+      }
+      guard buffer.count < byteCountBeforeParsing else { break }
+    }
   }
 
   private func nextTextMessage() -> String? {
