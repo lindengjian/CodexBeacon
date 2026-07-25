@@ -79,6 +79,8 @@ struct AppServerTaskMonitor {
         return try handleLoadedThreadsResponse(data)
       case .thread(let threadID):
         return try handleThreadResponse(data, expectedThreadID: threadID)
+      case .latestTurn(let threadID):
+        return try handleLatestTurnResponse(data, expectedThreadID: threadID)
       }
     } catch {
       return fail()
@@ -108,6 +110,17 @@ struct AppServerTaskMonitor {
     )
     nextRequestID += 1
     pendingRequests[request.id] = .thread(threadID)
+    requests.append(request)
+  }
+
+  private mutating func requestLatestTurn(_ threadID: String) {
+    let request = AppServerRequest(
+      id: nextRequestID,
+      method: .listTurns,
+      threadID: threadID
+    )
+    nextRequestID += 1
+    pendingRequests[request.id] = .latestTurn(threadID)
     requests.append(request)
   }
 
@@ -146,21 +159,21 @@ struct AppServerTaskMonitor {
       !thread.ephemeral
       && thread.threadSource != "system"
       && thread.parentThreadId == nil
-    let isWorking: Bool
+    let taskState: ObservedTaskState
     if isUserVisibleRoot {
       guard
         let status = thread.status,
-        let workingState = workingState(from: status)
+        let state = self.taskState(from: status)
       else {
         return fail()
       }
-      isWorking = workingState
+      taskState = state
     } else {
-      isWorking = false
+      taskState = .idle
     }
     observedThreads[thread.id] = ObservedThread(
       isUserVisibleRoot: isUserVisibleRoot,
-      isWorking: isWorking
+      taskState: taskState
     )
     outstandingInitialReads.remove(thread.id)
 
@@ -171,6 +184,39 @@ struct AppServerTaskMonitor {
     return aggregateStatus
   }
 
+  private mutating func handleLatestTurnResponse(
+    _ data: Data,
+    expectedThreadID: String
+  ) throws -> BeaconStatus {
+    let response = try JSONDecoder().decode(TurnsListResponse.self, from: data)
+    guard let thread = observedThreads[expectedThreadID] else {
+      return fail()
+    }
+
+    let taskState: ObservedTaskState
+    if let latestTurn = response.result.data.first {
+      guard let turnStatus = TurnStatus(rawValue: latestTurn.status) else {
+        return fail()
+      }
+      switch turnStatus {
+      case .completed:
+        taskState = .completed
+      case .failed, .interrupted:
+        taskState = .idle
+      case .inProgress:
+        taskState = .working
+      }
+    } else {
+      taskState = .idle
+    }
+
+    observedThreads[expectedThreadID] = ObservedThread(
+      isUserVisibleRoot: thread.isUserVisibleRoot,
+      taskState: taskState
+    )
+    return currentStatus
+  }
+
   private mutating func handleStatusNotification(
     _ data: Data
   ) throws -> BeaconStatus {
@@ -179,7 +225,7 @@ struct AppServerTaskMonitor {
       from: data
     )
     let threadID = notification.params.threadID
-    guard let isWorking = workingState(from: notification.params.status) else {
+    guard let taskState = taskState(from: notification.params.status) else {
       return fail()
     }
 
@@ -193,19 +239,24 @@ struct AppServerTaskMonitor {
 
     observedThreads[threadID] = ObservedThread(
       isUserVisibleRoot: previousThread.isUserVisibleRoot,
-      isWorking: isWorking
+      taskState: taskState
     )
+    if taskState == .idle, previousThread.taskState.isActive,
+      !hasPendingLatestTurnRead(for: threadID)
+    {
+      requestLatestTurn(threadID)
+    }
     return state == .available ? aggregateStatus : .monitoringUnavailable
   }
 
-  private func workingState(from status: ProtocolThreadStatus) -> Bool? {
+  private func taskState(from status: ProtocolThreadStatus) -> ObservedTaskState? {
     guard let statusType = ProtocolThreadStatusType(rawValue: status.type) else {
       return nil
     }
 
     switch statusType {
     case .idle:
-      return false
+      return .idle
     case .active:
       guard let flags = status.activeFlags else {
         return nil
@@ -214,17 +265,29 @@ struct AppServerTaskMonitor {
       guard activeFlags.count == flags.count else {
         return nil
       }
-      return !activeFlags.contains(.waitingOnApproval)
-        && !activeFlags.contains(.waitingOnUserInput)
+      return activeFlags.contains(.waitingOnApproval)
+        || activeFlags.contains(.waitingOnUserInput)
+        ? .waitingForYou
+        : .working
     case .notLoaded, .systemError:
       return nil
     }
   }
 
   private var aggregateStatus: BeaconStatus {
-    observedThreads.values.contains {
-      $0.isUserVisibleRoot && $0.isWorking
-    } ? .working : .idle
+    let userVisibleStates = observedThreads.values.compactMap { thread in
+      thread.isUserVisibleRoot ? thread.taskState : nil
+    }
+    if userVisibleStates.contains(.waitingForYou) {
+      return .waitingForYou
+    }
+    if userVisibleStates.contains(.working) {
+      return .working
+    }
+    if userVisibleStates.contains(.completed) {
+      return .completed
+    }
+    return .idle
   }
 
   private var currentStatus: BeaconStatus {
@@ -249,6 +312,15 @@ struct AppServerTaskMonitor {
     }
   }
 
+  private func hasPendingLatestTurnRead(for threadID: String) -> Bool {
+    pendingRequests.values.contains {
+      guard case .latestTurn(let pendingThreadID) = $0 else {
+        return false
+      }
+      return pendingThreadID == threadID
+    }
+  }
+
   private mutating func fail() -> BeaconStatus {
     state = .unavailable
     requests.removeAll()
@@ -261,11 +333,13 @@ struct AppServerTaskMonitor {
 private enum PendingRequest {
   case loadedThreads
   case thread(String)
+  case latestTurn(String)
 }
 
 private enum AppServerRequestMethod: String {
   case loadedThreads = "thread/loaded/list"
   case readThread = "thread/read"
+  case listTurns = "thread/turns/list"
 }
 
 private enum AppServerNotificationMethod: String {
@@ -286,7 +360,18 @@ private enum AppServerActiveFlag: String {
 
 private struct ObservedThread {
   let isUserVisibleRoot: Bool
-  let isWorking: Bool
+  let taskState: ObservedTaskState
+}
+
+private enum ObservedTaskState: Equatable {
+  case idle
+  case working
+  case waitingForYou
+  case completed
+
+  var isActive: Bool {
+    self == .working || self == .waitingForYou
+  }
 }
 
 private enum MonitoringState {
@@ -342,4 +427,23 @@ private struct ThreadStatusChangedParameters: Decodable {
     case threadID = "threadId"
     case status
   }
+}
+
+private struct TurnsListResponse: Decodable {
+  let result: TurnsListResult
+}
+
+private struct TurnsListResult: Decodable {
+  let data: [ProtocolTurn]
+}
+
+private struct ProtocolTurn: Decodable {
+  let status: String
+}
+
+private enum TurnStatus: String {
+  case inProgress
+  case completed
+  case interrupted
+  case failed
 }

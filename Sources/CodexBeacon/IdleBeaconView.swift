@@ -45,6 +45,10 @@ struct IdleBeaconView: View {
       "Idle"
     case .working:
       "Working"
+    case .waitingForYou:
+      "Waiting for you"
+    case .completed:
+      "Completed"
     case .monitoringUnavailable:
       "Monitoring unavailable"
     }

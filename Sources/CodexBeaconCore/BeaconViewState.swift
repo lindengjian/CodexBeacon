@@ -24,6 +24,8 @@ public struct BeaconDimensions: Equatable, Sendable {
 public enum BeaconStatus: Equatable, Sendable {
   case idle
   case working
+  case waitingForYou
+  case completed
   case monitoringUnavailable
 }
 
@@ -136,11 +138,13 @@ public struct BeaconViewState: Equatable, Sendable {
       status == .monitoringUnavailable ? .steady : .off
     let amberIllumination: BeaconLightIllumination =
       status == .working ? .steady : .off
+    let greenIllumination: BeaconLightIllumination =
+      status == .waitingForYou || status == .completed ? .steady : .off
 
     return [
       .init(color: .red, illumination: redIllumination, showsRecess: true),
       .init(color: .amber, illumination: amberIllumination, showsRecess: true),
-      .init(color: .green, illumination: .off, showsRecess: true),
+      .init(color: .green, illumination: greenIllumination, showsRecess: true),
     ]
   }
 }

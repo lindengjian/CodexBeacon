@@ -6,11 +6,22 @@ import SwiftUI
 final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
   private let coordinator = AppCoordinator()
   private var panel: BeaconPanel?
+  private var taskMonitor: DesktopAppServerMonitor?
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     coordinator.start()
     present(coordinator.viewState)
     perform(coordinator.drainEffects())
+    taskMonitor = DesktopAppServerMonitor(
+      deliver: { [weak self] event in self?.handleTaskEvent(event) },
+      requestsProvider: { [weak self] in self?.coordinator.drainAppServerRequests() ?? [] }
+    )
+    taskMonitor?.start()
+  }
+
+  private func handleTaskEvent(_ event: TaskEvent) {
+    coordinator.handle(.task(event))
+    panel?.contentView = NSHostingView(rootView: IdleBeaconView(state: coordinator.viewState))
   }
 
   private func present(_ state: BeaconViewState) {

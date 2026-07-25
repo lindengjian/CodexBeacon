@@ -196,7 +196,79 @@ struct AppServerTaskStateScenarioTests {
       )
     )
 
-    #expect(coordinator.viewState.status == .idle)
+    let latestTurnRequest = coordinator.drainAppServerRequests().first
+    #expect(latestTurnRequest?.method == "thread/turns/list")
+    #expect(latestTurnRequest?.threadID == "thread-1")
+
+    coordinator.handle(
+      .task(
+        .appServerMessage(
+          """
+          {
+            "id": \(latestTurnRequest!.id),
+            "result": {"data": [{"id": "turn-1", "status": "completed"}]}
+          }
+          """
+        )
+      )
+    )
+
+    #expect(coordinator.viewState.status == .completed)
+  }
+
+  @Test("approval and user-input flags present waiting without replying to the server")
+  func waitingFlagsPresentWaitingWithoutServerResponse() {
+    let coordinator = AppCoordinator()
+
+    coordinator.handle(
+      .task(.monitoringConnectionEstablished(protocolCompatible: true))
+    )
+    let loadedListRequest = coordinator.drainAppServerRequests().first!
+    coordinator.handle(
+      .task(
+        .appServerMessage(
+          """
+          {"id":\(loadedListRequest.id),"result":{"data":["thread-1"]}}
+          """
+        )
+      )
+    )
+    let readRequest = coordinator.drainAppServerRequests().first!
+    coordinator.handle(
+      .task(
+        .appServerMessage(
+          """
+          {
+            "id": \(readRequest.id),
+            "result": {
+              "thread": {
+                "id": "thread-1",
+                "source": "vscode",
+                "ephemeral": false,
+                "parentThreadId": null,
+                "status": {"type": "active", "activeFlags": ["waitingOnUserInput"]}
+              }
+            }
+          }
+          """
+        )
+      )
+    )
+
+    #expect(coordinator.viewState.status == .waitingForYou)
+
+    coordinator.handle(
+      .task(
+        .appServerMessage(
+          """
+          {"id": 99, "method": "item/commandExecution/requestApproval", "params": {}}
+          """
+        )
+      )
+    )
+
+    #expect(coordinator.viewState.status == .waitingForYou)
+    #expect(coordinator.drainAppServerRequests().isEmpty)
   }
 
   @Test("connection, compatibility, and freshness failures are unavailable")
