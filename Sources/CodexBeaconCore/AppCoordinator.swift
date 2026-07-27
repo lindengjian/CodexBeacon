@@ -65,7 +65,9 @@ public final class AppCoordinator {
     case .user(.beaconActivated):
       let waitingThreadID = taskMonitor.waitingTasks.first?.threadID
       taskMonitor.confirmCompletions()
-      presentTaskStatus(taskMonitor.status)
+      presentTaskStatus(
+        sharedRuntimeValidated ? taskMonitor.status : .monitoringUnavailable
+      )
       effects.append(.activateCodex(threadID: waitingThreadID))
     }
   }

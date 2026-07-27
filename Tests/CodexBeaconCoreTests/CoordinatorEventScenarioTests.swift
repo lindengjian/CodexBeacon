@@ -56,6 +56,10 @@ struct CoordinatorEventScenarioTests {
 
     #expect(coordinator.viewState.status == .monitoringUnavailable)
 
+    coordinator.handle(.user(.beaconActivated))
+
+    #expect(coordinator.viewState.status == .monitoringUnavailable)
+
     coordinator.handle(.task(.monitoringRuntimeValidated))
 
     #expect(coordinator.viewState.status == .idle)
