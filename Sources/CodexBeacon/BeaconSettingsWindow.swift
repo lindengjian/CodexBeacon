@@ -7,7 +7,7 @@ import SwiftUI
 final class BeaconSettingsWindowController: NSWindowController {
   init(rootView: BeaconSettingsView) {
     let window = NSWindow(
-      contentRect: NSRect(x: 0, y: 0, width: 390, height: 230),
+      contentRect: NSRect(x: 0, y: 0, width: 460, height: 510),
       styleMask: [.titled, .closable],
       backing: .buffered,
       defer: false
@@ -29,15 +29,43 @@ final class BeaconSettingsWindowController: NSWindowController {
   }
 }
 
+@MainActor
+final class InitialSetupWindowController: NSWindowController {
+  init(rootView: InitialSetupView) {
+    let window = NSWindow(
+      contentRect: NSRect(x: 0, y: 0, width: 500, height: 450),
+      styleMask: [.titled, .closable],
+      backing: .buffered,
+      defer: false
+    )
+    window.title = "Codex Beacon 首次设置"
+    window.isReleasedWhenClosed = false
+    window.contentView = NSHostingView(rootView: rootView)
+    window.center()
+    super.init(window: window)
+  }
+
+  required init?(coder: NSCoder) {
+    fatalError("init(coder:) has not been implemented")
+  }
+
+  func present() {
+    showWindow(nil)
+    window?.makeKeyAndOrderFront(nil)
+  }
+}
+
 struct BeaconSettingsView: View {
   @StateObject private var model: BeaconSettingsModel
+  let integrationSettings: BeaconIntegrationSettingsModel?
 
   init(
     size: BeaconSize,
     hotKey: BeaconHotKey,
     registrationError: String? = nil,
     onSizeSelected: @escaping (BeaconSize) -> Void,
-    onHotKeySelected: @escaping (BeaconHotKey) -> String?
+    onHotKeySelected: @escaping (BeaconHotKey) -> String?,
+    integrationSettings: BeaconIntegrationSettingsModel? = nil
   ) {
     _model = StateObject(
       wrappedValue: BeaconSettingsModel(
@@ -48,6 +76,7 @@ struct BeaconSettingsView: View {
         onHotKeySelected: onHotKeySelected
       )
     )
+    self.integrationSettings = integrationSettings
   }
 
   var body: some View {
@@ -85,9 +114,13 @@ struct BeaconSettingsView: View {
           .font(.caption)
           .foregroundStyle(.red)
       }
+
+      if let integrationSettings {
+        BeaconIntegrationSettingsSection(model: integrationSettings)
+      }
     }
     .padding(20)
-    .frame(width: 390, height: 230, alignment: .topLeading)
+    .frame(width: 460, alignment: .topLeading)
   }
 }
 

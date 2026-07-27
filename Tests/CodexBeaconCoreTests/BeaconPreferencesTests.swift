@@ -44,4 +44,47 @@ struct BeaconPreferencesTests {
     #expect(restored.size == .standard)
     #expect(restored.anchor == anchor)
   }
+
+  @Test("initial setup and launch-at-login choices persist without losing existing Beacon preferences")
+  func setupPreferencesPersistAlongsideBeaconPreferences() throws {
+    let suiteName = "BeaconPreferencesTests.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+
+    let store = BeaconPreferencesStore(defaults: defaults)
+    let fallbackHotKey = BeaconHotKey(keyCode: 8, modifiers: 6_400)
+    let expected = BeaconPreferences(
+      size: .compact,
+      hotKey: fallbackHotKey,
+      anchor: .init(displayIdentifier: "built-in", edge: .right, alongEdgeOffset: 0.4),
+      hasCompletedInitialSetup: true,
+      launchesAtLogin: false
+    )
+
+    store.save(expected)
+
+    #expect(store.load(fallbackHotKey: fallbackHotKey) == expected)
+  }
+
+  @Test("saved preferences from before onboarding retain their Beacon choices and use setup defaults")
+  func legacyPreferencesUseInitialSetupDefaults() throws {
+    let suiteName = "BeaconPreferencesTests.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+
+    let fallbackHotKey = BeaconHotKey(keyCode: 8, modifiers: 6_400)
+    let data = try #require(
+      """
+      {"size":"compact","hotKey":{"keyCode":8,"modifiers":6400},"anchor":null}
+      """.data(using: .utf8)
+    )
+    defaults.set(data, forKey: "beaconPreferences")
+
+    let restored = BeaconPreferencesStore(defaults: defaults).load(fallbackHotKey: fallbackHotKey)
+
+    #expect(restored.size == .compact)
+    #expect(restored.hotKey == fallbackHotKey)
+    #expect(!restored.hasCompletedInitialSetup)
+    #expect(restored.launchesAtLogin)
+  }
 }

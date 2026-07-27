@@ -67,6 +67,104 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
     sawSharedDesktopRuntime = false
   }
 
+  /// Reports only local compatibility facts. Diagnosis is passive: it does not
+  /// start a daemon, alter Desktop, or inspect task data.
+  func diagnose(
+    completion: @escaping @MainActor @Sendable (DesktopIntegrationDiagnostic) -> Void
+  ) {
+    let desktopApplicationURL = Self.findDesktopApplication()
+    DispatchQueue.global(qos: .userInitiated).async { [bundledCLIURL, socketPath] in
+      let diagnostic = Self.diagnostic(
+        bundledCLIURL: bundledCLIURL,
+        socketPath: socketPath,
+        desktopApplicationURL: desktopApplicationURL,
+        adapter: DesktopDaemonCompatibilityAdapter()
+      )
+      DispatchQueue.main.async { completion(diagnostic) }
+    }
+  }
+
+  /// The repair path is deliberately user-initiated. It only creates Beacon's
+  /// labelled LaunchAgent and the next-process opt-in; it never stops Desktop.
+  func repair(
+    completion: @escaping @MainActor @Sendable (DesktopIntegrationDiagnostic) -> Void
+  ) {
+    DispatchQueue.global(qos: .userInitiated).async { [bundledCLIURL, socketPath] in
+      let adapter = DesktopDaemonCompatibilityAdapter()
+      guard let bundledCLIURL else {
+        DispatchQueue.main.async {
+          completion(
+            .init(
+              health: .unavailable,
+              summary: "未找到 Codex Desktop",
+              instructions: "请安装或重新安装 Codex Desktop，然后重新运行诊断。"
+            )
+          )
+        }
+        return
+      }
+      guard let cliVersion = Self.cliVersion(at: bundledCLIURL) else {
+        DispatchQueue.main.async {
+          completion(
+            .init(
+              health: .unavailable,
+              summary: "无法读取 Codex Desktop 的内置 CLI",
+              instructions: "确认 Codex Desktop 完整安装后重新运行诊断。"
+            )
+          )
+        }
+        return
+      }
+      guard DesktopDaemonCompatibilityAdapter.supports(cliVersion: cliVersion) else {
+        DispatchQueue.main.async {
+          completion(
+            .init(
+              health: .unavailable,
+              summary: "Codex Desktop 版本暂不兼容（CLI \(cliVersion)）",
+              instructions: "Beacon 已保持监测不可用；请更新到受支持的 Codex Desktop 版本后重试。"
+            )
+          )
+        }
+        return
+      }
+
+      let result = adapter.prepare(bundledCLIURL: bundledCLIURL, cliVersion: cliVersion)
+      let diagnostic: DesktopIntegrationDiagnostic
+      if let result {
+        diagnostic = .init(
+          health: .unavailable,
+          summary: "无法修复共享 App Server 集成",
+          instructions: "\(result)\n本地诊断：\(adapter.diagnosticPath.path)"
+        )
+      } else {
+        diagnostic = .init(
+          health: .restartRequired,
+          summary: "共享 App Server 已准备，等待重启 Codex Desktop",
+          instructions: "请先在 Codex 中保存工作，再完全退出并重新打开 Codex Desktop。Beacon 不会替你终止任务或关闭应用；重启后重新运行诊断。"
+        )
+      }
+      _ = socketPath // Keep the repair signature aligned with passive diagnosis.
+      DispatchQueue.main.async { completion(diagnostic) }
+    }
+  }
+
+  /// Removes only Beacon's labelled compatibility adapter and restores the
+  /// launchd environment value that existed before Beacon changed it.
+  func restoreDefaultIntegration(
+    completion: @escaping @MainActor @Sendable (DesktopIntegrationDiagnostic) -> Void
+  ) {
+    DispatchQueue.global(qos: .userInitiated).async {
+      let adapter = DesktopDaemonCompatibilityAdapter()
+      adapter.rollback()
+      let diagnostic = DesktopIntegrationDiagnostic(
+        health: .restartRequired,
+        summary: "已恢复默认 Desktop 集成",
+        instructions: "请完全退出并重新打开 Codex Desktop，以恢复其默认私有 App Server 拓扑。Beacon 没有修改任何任务、认证信息、配置或私有记录。"
+      )
+      DispatchQueue.main.async { completion(diagnostic) }
+    }
+  }
+
   private func attemptConnection() {
     guard !isStopped, !connectionAttemptInFlight else {
       return
@@ -74,7 +172,7 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
     connectionAttemptInFlight = true
 
     guard let bundledCLIURL else {
-      connectionAttemptFailed("Codex Desktop's bundled CLI was not found.")
+      connectionAttemptFailed("Codex Desktop's bundled CLI was not found. Open Settings to run local integration diagnostics.")
       return
     }
     guard FileManager.default.isExecutableFile(atPath: bundledCLIURL.path) else {
@@ -87,13 +185,15 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
         DispatchQueue.main.async { self.connectionAttemptFailed("The bundled Codex CLI version could not be read.") }
         return
       }
-      guard FileManager.default.fileExists(atPath: self.socketPath) else {
-        let adoptionFailure = self.compatibilityAdapter.prepare(
-          bundledCLIURL: bundledCLIURL,
-          cliVersion: cliVersion
-        )
+      guard DesktopDaemonCompatibilityAdapter.supports(cliVersion: cliVersion) else {
         DispatchQueue.main.async {
-          self.connectionAttemptFailed(adoptionFailure ?? "The shared daemon was prepared. Fully quit and reopen Codex Desktop; Beacon will reconnect automatically when shared runtime state is available.")
+          self.connectionAttemptFailed("The bundled Codex CLI version is not supported. Beacon remains unavailable until a supported Desktop version is installed.")
+        }
+        return
+      }
+      guard FileManager.default.fileExists(atPath: self.socketPath) else {
+        DispatchQueue.main.async {
+          self.connectionAttemptFailed("The shared App Server is not ready. Open Settings to diagnose or repair the integration; Beacon will remain unavailable until shared Desktop runtime evidence is observed.")
         }
         return
       }
@@ -102,12 +202,8 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
         arguments: ["app-server", "daemon", "version"]
       ), Self.daemonVersionsMatch(versions)
       else {
-        let adoptionFailure = self.compatibilityAdapter.prepare(
-          bundledCLIURL: bundledCLIURL,
-          cliVersion: cliVersion
-        )
         DispatchQueue.main.async {
-          self.connectionAttemptFailed(adoptionFailure ?? "The shared daemon was prepared after its existing control socket failed validation. Fully quit and reopen Codex Desktop; Beacon will reconnect automatically when shared runtime state is available.")
+          self.connectionAttemptFailed("The shared App Server version is not compatible. Open Settings to diagnose or repair the integration.")
         }
         return
       }
@@ -326,13 +422,24 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
       .appendingPathComponent(".codex/app-server-control/app-server-control.sock")
 
   private static func findBundledCLI() -> URL? {
+    let desktopURL = findDesktopApplication()
+    let candidates = [
+      desktopURL?.appendingPathComponent("Contents/Resources/codex"),
+      URL(fileURLWithPath: "/Applications/ChatGPT.app/Contents/Resources/codex"),
+      URL(fileURLWithPath: "/Applications/Codex.app/Contents/Resources/codex"),
+    ].compactMap { $0 }
+    return candidates.first { FileManager.default.isExecutableFile(atPath: $0.path) }
+  }
+
+  private static func findDesktopApplication() -> URL? {
     let codexURL = URL(string: "codex://threads/new")
     let appURL = codexURL.flatMap { NSWorkspace.shared.urlForApplication(toOpen: $0) }
     let candidates = [
-      appURL?.appendingPathComponent("Contents/Resources/codex"),
-      URL(fileURLWithPath: "/Applications/ChatGPT.app/Contents/Resources/codex"),
+      appURL,
+      URL(fileURLWithPath: "/Applications/ChatGPT.app"),
+      URL(fileURLWithPath: "/Applications/Codex.app"),
     ].compactMap { $0 }
-    return candidates.first { FileManager.default.isExecutableFile(atPath: $0.path) }
+    return candidates.first { FileManager.default.fileExists(atPath: $0.path) }
   }
 
   private static func commandOutput(at executable: URL, arguments: [String]) -> String? {
@@ -366,6 +473,76 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
       Range($0.range, in: output).map { String(output[$0]) }
     }
     return versions.count >= 2 && versions[0] == versions[1]
+  }
+
+  private static func diagnostic(
+    bundledCLIURL: URL?,
+    socketPath: String,
+    desktopApplicationURL: URL?,
+    adapter: DesktopDaemonCompatibilityAdapter
+  ) -> DesktopIntegrationDiagnostic {
+    guard let desktopApplicationURL else {
+      return .init(
+        health: .unavailable,
+        summary: "未检测到 Codex Desktop",
+        instructions: "请安装 Codex Desktop，然后重新运行诊断。"
+      )
+    }
+    guard let desktopVersion = desktopVersion(at: desktopApplicationURL) else {
+      return .init(
+        health: .unavailable,
+        summary: "无法读取 Codex Desktop 版本",
+        instructions: "请重新安装 Codex Desktop；Beacon 会在版本信息不可用时保持监测不可用。"
+      )
+    }
+    guard let bundledCLIURL, FileManager.default.isExecutableFile(atPath: bundledCLIURL.path) else {
+      return .init(
+        health: .unavailable,
+        summary: "Codex Desktop 的内置 CLI 不可用",
+        instructions: "请重新安装 Codex Desktop；Beacon 不会尝试使用外部 CLI 替代它。"
+      )
+    }
+    guard let cliVersion = cliVersion(at: bundledCLIURL) else {
+      return .init(
+        health: .unavailable,
+        summary: "无法读取内置 CLI 版本",
+        instructions: "请确认 Codex Desktop 未损坏后重新运行诊断。"
+      )
+    }
+    guard DesktopDaemonCompatibilityAdapter.supports(cliVersion: cliVersion) else {
+      return .init(
+        health: .unavailable,
+        summary: "Codex Desktop \(desktopVersion) 暂不兼容（CLI \(cliVersion)）",
+        instructions: "Beacon 已保持监测不可用；请更新到受支持版本。"
+      )
+    }
+    guard FileManager.default.fileExists(atPath: socketPath) else {
+      return .init(
+        health: adapter.isPrepared ? .restartRequired : .repairRequired,
+        summary: adapter.isPrepared ? "等待重启 Codex Desktop" : "共享 App Server 尚未准备",
+        instructions: adapter.isPrepared
+          ? "请完全退出并重新打开 Codex Desktop，然后重新运行诊断。"
+          : "选择“修复集成”以准备受版本约束的共享守护进程适配器。"
+      )
+    }
+    guard let versions = commandOutput(at: bundledCLIURL, arguments: ["app-server", "daemon", "version"]), daemonVersionsMatch(versions) else {
+      return .init(
+        health: .repairRequired,
+        summary: "共享 App Server 版本组合不兼容",
+        instructions: "选择“修复集成”以重新准备适配器；若问题仍存在，请查看本地诊断。"
+      )
+    }
+    return .init(
+      health: .ready,
+      summary: "Codex Desktop \(desktopVersion) 与共享 App Server 兼容",
+      instructions: "Beacon 仍会等待已加载的 Desktop 运行时证据；若失败，将保持监测不可用并写入本地诊断。"
+    )
+  }
+
+  private static func desktopVersion(at applicationURL: URL) -> String? {
+    let bundle = Bundle(url: applicationURL)
+    return bundle?.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+      ?? bundle?.object(forInfoDictionaryKey: "CFBundleVersion") as? String
   }
 }
 

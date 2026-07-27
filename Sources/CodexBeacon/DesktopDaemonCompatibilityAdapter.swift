@@ -80,6 +80,15 @@ final class DesktopDaemonCompatibilityAdapter {
 
   var diagnosticPath: URL { diagnosticStore.fileURL }
 
+  var isPrepared: Bool {
+    fileManager.fileExists(atPath: launchAgentURL.path)
+      && fileManager.fileExists(atPath: stateURL.path)
+  }
+
+  static func supports(cliVersion: String) -> Bool {
+    supportedCLIVersions.contains(cliVersion)
+  }
+
   private var userDomain: String { "gui/\(getuid())" }
   private var serviceTarget: String { "\(userDomain)/\(Self.label)" }
 

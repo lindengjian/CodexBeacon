@@ -25,7 +25,10 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
   private var hotKeyReference: EventHotKeyRef?
   private var hotKeyEventHandlerReference: EventHandlerRef?
   private var settingsWindowController: BeaconSettingsWindowController?
+  private var setupWindowController: InitialSetupWindowController?
+  private var integrationSettingsModel: BeaconIntegrationSettingsModel?
   private var hotKeyRegistrationError: String?
+  private var hasStartedMonitoring = false
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     coordinator.start()
@@ -59,12 +62,16 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
       deliver: { [weak self] event in self?.handleTaskEvent(event) },
       requestsProvider: { [weak self] in self?.coordinator.drainAppServerRequests() ?? [] }
     )
-    taskMonitor?.start()
     installGlobalHotKeyEventHandler()
     let status = registerGlobalHotKey(preferences.hotKey)
     if status != noErr {
       hotKeyRegistrationError = "无法注册已保存的全局快捷键（系统错误 \(status)）。请在设置中选择其他快捷键。"
       showSettings()
+    }
+    if preferences.hasCompletedInitialSetup {
+      startMonitoring()
+    } else {
+      showInitialSetup()
     }
   }
 
@@ -283,11 +290,13 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
 
   private func showSettings() {
     if let settingsWindowController {
+      integrationSettingsModel?.refresh()
       settingsWindowController.present()
       NSApp.activate(ignoringOtherApps: true)
       return
     }
 
+    let integrationSettings = integrationSettingsModel ?? makeIntegrationSettingsModel()
     let rootView = BeaconSettingsView(
       size: preferences.size,
       hotKey: preferences.hotKey,
@@ -297,13 +306,163 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
       },
       onHotKeySelected: { [weak self] hotKey in
         self?.replaceGlobalHotKey(with: hotKey)
-      }
+      },
+      integrationSettings: integrationSettings
     )
     let controller = BeaconSettingsWindowController(rootView: rootView)
     settingsWindowController = controller
     controller.present()
     NSApp.activate(ignoringOtherApps: true)
   }
+
+  private func showInitialSetup() {
+    if let setupWindowController {
+      setupWindowController.present()
+      return
+    }
+    let model = InitialSetupModel(
+      notificationStatus: "正在读取",
+      diagnostic: .init(
+        health: .repairRequired,
+        summary: "正在检测 Codex Desktop",
+        instructions: "仅检查本机应用与共享 App Server 的兼容性。"
+      ),
+      requestNotificationPermission: { completion in
+        BeaconSystemIntegration.requestNotificationAuthorization(completion)
+      },
+      diagnose: { [weak self] completion in
+        guard let self else {
+          completion(Self.unavailableIntegrationDiagnostic)
+          return
+        }
+        self.diagnoseIntegration(completion)
+      },
+      repair: { [weak self] completion in
+        guard let self else {
+          completion(Self.unavailableIntegrationDiagnostic)
+          return
+        }
+        self.repairIntegration(completion)
+      },
+      complete: { [weak self] launchesAtLogin in
+        self?.completeInitialSetup(launchesAtLogin: launchesAtLogin)
+          ?? "Beacon 已退出，无法完成设置。"
+      }
+    )
+    let controller = InitialSetupWindowController(rootView: InitialSetupView(model: model))
+    setupWindowController = controller
+    controller.present()
+    model.refresh()
+    model.requestNotifications()
+    NSApp.activate(ignoringOtherApps: true)
+  }
+
+  private func completeInitialSetup(launchesAtLogin: Bool) -> String? {
+    if let launchAtLoginError = BeaconSystemIntegration.setLaunchAtLogin(launchesAtLogin) {
+      return launchAtLoginError
+    }
+    preferences.launchesAtLogin = launchesAtLogin
+    preferences.hasCompletedInitialSetup = true
+    preferencesStore.save(preferences)
+    setupWindowController?.close()
+    setupWindowController = nil
+    startMonitoring()
+    return nil
+  }
+
+  private func startMonitoring() {
+    guard !hasStartedMonitoring else {
+      return
+    }
+    hasStartedMonitoring = true
+    taskMonitor?.start()
+  }
+
+  private func makeIntegrationSettingsModel() -> BeaconIntegrationSettingsModel {
+    let model = BeaconIntegrationSettingsModel(
+      launchesAtLogin: preferences.launchesAtLogin,
+      notificationStatus: "正在读取",
+      diagnostic: .init(
+        health: .repairRequired,
+        summary: "尚未运行诊断",
+        instructions: "重新运行诊断以验证 Codex Desktop 集成。"
+      ),
+      setLaunchAtLogin: { enabled in
+        BeaconSystemIntegration.setLaunchAtLogin(enabled)
+      },
+      requestNotificationPermission: { completion in
+        BeaconSystemIntegration.requestNotificationAuthorization(completion)
+      },
+      readNotificationStatus: { completion in
+        BeaconSystemIntegration.notificationAuthorizationStatus(completion)
+      },
+      diagnose: { [weak self] completion in
+        guard let self else {
+          completion(Self.unavailableIntegrationDiagnostic)
+          return
+        }
+        self.diagnoseIntegration(completion)
+      },
+      repair: { [weak self] completion in
+        guard let self else {
+          completion(Self.unavailableIntegrationDiagnostic)
+          return
+        }
+        self.repairIntegration(completion)
+      },
+      restoreDefaultIntegration: { [weak self] completion in
+        guard let self else {
+          completion(Self.unavailableIntegrationDiagnostic)
+          return
+        }
+        self.restoreDefaultIntegration(completion)
+      },
+      persistLaunchAtLogin: { [weak self] enabled in
+        guard let self else { return }
+        self.preferences.launchesAtLogin = enabled
+        self.preferencesStore.save(self.preferences)
+      }
+    )
+    integrationSettingsModel = model
+    model.refresh()
+    return model
+  }
+
+  private func diagnoseIntegration(
+    _ completion: @escaping @MainActor @Sendable (DesktopIntegrationDiagnostic) -> Void
+  ) {
+    guard let taskMonitor else {
+      completion(Self.unavailableIntegrationDiagnostic)
+      return
+    }
+    taskMonitor.diagnose(completion: completion)
+  }
+
+  private func repairIntegration(
+    _ completion: @escaping @MainActor @Sendable (DesktopIntegrationDiagnostic) -> Void
+  ) {
+    guard let taskMonitor else {
+      completion(Self.unavailableIntegrationDiagnostic)
+      return
+    }
+    taskMonitor.repair(completion: completion)
+  }
+
+  private func restoreDefaultIntegration(
+    _ completion: @escaping @MainActor @Sendable (DesktopIntegrationDiagnostic) -> Void
+  ) {
+    guard let taskMonitor else {
+      completion(Self.unavailableIntegrationDiagnostic)
+      return
+    }
+    taskMonitor.restoreDefaultIntegration(completion: completion)
+  }
+
+  private static let unavailableIntegrationDiagnostic = DesktopIntegrationDiagnostic(
+    health: .unavailable,
+    summary: "任务监测尚未初始化",
+    instructions: "请重启 Beacon 后重新运行诊断。"
+  )
 
   private func updateBeaconSize(_ size: BeaconSize) {
     guard preferences.size != size else {

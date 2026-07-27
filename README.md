@@ -22,6 +22,20 @@ swift run CodexBeacon
 The process uses the accessory activation policy and creates neither a Dock
 icon nor a menu bar item.
 
+## First-time setup and diagnostics
+
+On its first launch, Beacon opens a compact setup window. It detects Codex
+Desktop and its bundled CLI, verifies the shared App Server version pair,
+requests notification permission, and offers Launch at Login enabled by
+default. The completion choice is saved, so later launches show only Beacon.
+
+Settings can show the current notification authorization, change Launch at
+Login, rerun the passive local diagnostic, prepare a supported shared-daemon
+adapter, or restore the default Desktop topology. Preparing or restoring the
+adapter never terminates Codex Desktop: save any work, fully quit and reopen
+Codex Desktop, then rerun the diagnostic. Beacon never changes Codex tasks,
+authentication, configuration, or private records.
+
 ## Shared App Server recovery
 
 Beacon uses the tested, version-gated Desktop shared-daemon compatibility path
