@@ -60,6 +60,12 @@ public final class AppCoordinator {
       presentTaskStatus(taskMonitor.observationBecameStale())
       quotaMonitor.observationBecameStale()
       viewState.quotaTrack = quotaTrackState(from: quotaMonitor.accountQuota)
+    case .task(.monitoringSnapshotRequested):
+      presentTaskStatus(
+        sharedRuntimeValidated
+          ? taskMonitor.snapshotRequested()
+          : .monitoringUnavailable
+      )
     case .task(.appServerMessage(let message)):
       let quotaHandled = quotaMonitor.handle(
         message: message, observedAt: observationTime)

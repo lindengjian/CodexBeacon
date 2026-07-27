@@ -61,6 +61,51 @@ struct AppServerTaskStateScenarioTests {
     )
   }
 
+  @Test("an ephemeral Desktop user thread is presented as working")
+  func ephemeralDesktopUserThreadPresentsWorkingTask() {
+    let coordinator = AppCoordinator()
+
+    coordinator.handle(
+      .task(.monitoringConnectionEstablished(protocolCompatible: true))
+    )
+    let loadedListRequest = coordinator.drainAppServerRequests().first!
+    coordinator.handle(
+      .task(
+        .appServerMessage(
+          """
+          {"id":\(loadedListRequest.id),"result":{"data":["new-user-thread"]}}
+          """
+        )
+      )
+    )
+    let threadReadRequest = coordinator.drainAppServerRequests().first!
+
+    coordinator.handle(
+      .task(
+        .appServerMessage(
+          """
+          {
+            "id": \(threadReadRequest.id),
+            "result": {
+              "thread": {
+                "id": "new-user-thread",
+                "source": "vscode",
+                "threadSource": "user",
+                "ephemeral": true,
+                "parentThreadId": null,
+                "status": {"type": "active", "activeFlags": []}
+              }
+            }
+          }
+          """
+        )
+      )
+    )
+
+    #expect(coordinator.viewState.status == .working)
+    #expect(coordinator.viewState.lights[1].illumination == .steady)
+  }
+
   @Test("the aggregate excludes ephemeral, system, and child threads")
   func initialSnapshotFiltersNonRootTasks() {
     let coordinator = AppCoordinator()
@@ -520,6 +565,194 @@ struct AppServerTaskStateScenarioTests {
     )
 
     #expect(coordinator.viewState.status == .working)
+  }
+
+  @Test("an unknown not-loaded thread notification does not invalidate monitoring")
+  func unknownNotLoadedThreadDoesNotInvalidateMonitoring() {
+    let coordinator = AppCoordinator()
+
+    coordinator.handle(
+      .task(.monitoringConnectionEstablished(protocolCompatible: true))
+    )
+    let loadedListRequest = coordinator.drainAppServerRequests().first!
+    coordinator.handle(
+      .task(
+        .appServerMessage(
+          """
+          {"id":\(loadedListRequest.id),"result":{"data":[]}}
+          """
+        )
+      )
+    )
+    #expect(coordinator.viewState.status == .idle)
+
+    coordinator.handle(
+      .task(
+        .appServerMessage(
+          """
+          {
+            "method": "thread/status/changed",
+            "params": {
+              "threadId": "internal-thread",
+              "status": {"type": "notLoaded"}
+            }
+          }
+          """
+        )
+      )
+    )
+
+    #expect(coordinator.viewState.status == .idle)
+    #expect(coordinator.drainAppServerRequests().isEmpty)
+  }
+
+  @Test("a known task retains its last state while a not-loaded notification is refreshed")
+  func knownTaskRetainsStateDuringNotLoadedRefresh() {
+    let coordinator = AppCoordinator()
+
+    coordinator.handle(
+      .task(.monitoringConnectionEstablished(protocolCompatible: true))
+    )
+    let loadedListRequest = coordinator.drainAppServerRequests().first!
+    coordinator.handle(
+      .task(
+        .appServerMessage(
+          """
+          {"id":\(loadedListRequest.id),"result":{"data":["visible-thread"]}}
+          """
+        )
+      )
+    )
+    let initialReadRequest = coordinator.drainAppServerRequests().first!
+    coordinator.handle(
+      .task(
+        .appServerMessage(
+          """
+          {
+            "id": \(initialReadRequest.id),
+            "result": {
+              "thread": {
+                "id": "visible-thread",
+                "source": "vscode",
+                "ephemeral": false,
+                "parentThreadId": null,
+                "status": {"type": "active", "activeFlags": []}
+              }
+            }
+          }
+          """
+        )
+      )
+    )
+    #expect(coordinator.viewState.status == .working)
+
+    coordinator.handle(
+      .task(
+        .appServerMessage(
+          """
+          {
+            "method": "thread/status/changed",
+            "params": {
+              "threadId": "visible-thread",
+              "status": {"type": "notLoaded"}
+            }
+          }
+          """
+        )
+      )
+    )
+
+    #expect(coordinator.viewState.status == .working)
+    let refreshRequest = coordinator.drainAppServerRequests().first
+    #expect(refreshRequest?.method == "thread/read")
+    #expect(refreshRequest?.threadID == "visible-thread")
+
+    coordinator.handle(
+      .task(
+        .appServerMessage(
+          """
+          {
+            "id": \(refreshRequest!.id),
+            "result": {
+              "thread": {
+                "id": "visible-thread",
+                "source": "vscode",
+                "ephemeral": false,
+                "parentThreadId": null,
+                "status": {"type": "notLoaded"}
+              }
+            }
+          }
+          """
+        )
+      )
+    )
+    #expect(coordinator.viewState.status == .working)
+  }
+
+  @Test("a periodic snapshot discovers a working task after its status notification is missed")
+  func periodicSnapshotDiscoversWorkingTaskAfterMissedNotification() {
+    let coordinator = AppCoordinator()
+
+    coordinator.handle(
+      .task(.monitoringConnectionEstablished(protocolCompatible: true))
+    )
+    let initialSnapshotRequest = coordinator.drainAppServerRequests().first!
+    coordinator.handle(
+      .task(
+        .appServerMessage(
+          """
+          {"id":\(initialSnapshotRequest.id),"result":{"data":[]}}
+          """
+        )
+      )
+    )
+    #expect(coordinator.viewState.status == .idle)
+
+    coordinator.handle(.task(.monitoringSnapshotRequested))
+
+    let refreshRequest = coordinator.drainAppServerRequests().first
+    #expect(refreshRequest?.method == "thread/loaded/list")
+
+    coordinator.handle(
+      .task(
+        .appServerMessage(
+          """
+          {"id":\(refreshRequest!.id),"result":{"data":["new-working-thread"]}}
+          """
+        )
+      )
+    )
+    let threadReadRequest = coordinator.drainAppServerRequests().first
+    #expect(threadReadRequest?.method == "thread/read")
+    #expect(threadReadRequest?.threadID == "new-working-thread")
+
+    coordinator.handle(.task(.monitoringSnapshotRequested))
+    #expect(coordinator.drainAppServerRequests().isEmpty)
+
+    coordinator.handle(
+      .task(
+        .appServerMessage(
+          """
+          {
+            "id": \(threadReadRequest!.id),
+            "result": {
+              "thread": {
+                "id": "new-working-thread",
+                "source": "vscode",
+                "ephemeral": false,
+                "parentThreadId": null,
+                "status": {"type": "active", "activeFlags": []}
+              }
+            }
+          }
+          """
+        )
+      )
+    )
+
+    #expect(coordinator.viewState.status == .working)
+    #expect(coordinator.viewState.lights[1].illumination == .steady)
   }
 
   @Test("unrelated App Server notifications do not invalidate task evidence")

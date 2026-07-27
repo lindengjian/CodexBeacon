@@ -5,6 +5,7 @@ public enum TaskEvent: Equatable, Sendable {
   case monitoringRuntimeValidated
   case monitoringConnectionFailed
   case monitoringObservationBecameStale
+  case monitoringSnapshotRequested
   case appServerMessage(String)
 }
 

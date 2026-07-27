@@ -23,6 +23,7 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
   private var sawSharedDesktopRuntime = false
   private var reconnectBackoff = MonitoringReconnectBackoff()
   private var retryWorkItem: DispatchWorkItem?
+  private var snapshotTimer: DispatchSourceTimer?
   private var connectionAttemptInFlight = false
   private var connectionGeneration = 0
   private var isStopped = false
@@ -50,6 +51,8 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
     isStopped = true
     retryWorkItem?.cancel()
     retryWorkItem = nil
+    snapshotTimer?.cancel()
+    snapshotTimer = nil
     connectionAttemptInFlight = false
     connectionGeneration += 1
     client?.close()
@@ -142,8 +145,10 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
       }
       didInitialize = true
       client?.send(["method": "initialized"])
-      deliver(.monitoringConnectionEstablished(protocolCompatible: true))
-      flushRequests()
+      dispatch(
+        [.monitoringConnectionEstablished(protocolCompatible: true)],
+        flushesRequests: true
+      )
       DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
         guard
           let self,
@@ -178,11 +183,12 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
       hasSharedDesktopRuntime = false
     }
 
-    deliver(.appServerMessage(message))
+    var events: [TaskEvent] = [.appServerMessage(message)]
     if hasSharedDesktopRuntime {
-      deliver(.monitoringRuntimeValidated)
+      events.append(.monitoringRuntimeValidated)
+      startSnapshotTimer()
     }
-    flushRequests()
+    dispatch(events, flushesRequests: true)
   }
 
   private func connectionFailed(_ reason: String, from generation: Int) {
@@ -216,9 +222,11 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
     Logger(subsystem: "com.codexbeacon", category: "task-monitoring").error("\(reason, privacy: .public)")
     client?.close()
     client = nil
+    snapshotTimer?.cancel()
+    snapshotTimer = nil
     didInitialize = false
     sawSharedDesktopRuntime = false
-    deliver(.monitoringConnectionFailed)
+    dispatch([.monitoringConnectionFailed])
     scheduleReconnect()
   }
 
@@ -234,6 +242,38 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
     }
     retryWorkItem = workItem
     DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
+  }
+
+  private func startSnapshotTimer() {
+    guard snapshotTimer == nil, !isStopped else {
+      return
+    }
+    let timer = DispatchSource.makeTimerSource(queue: .main)
+    timer.schedule(
+      deadline: .now() + 2,
+      repeating: 2,
+      leeway: .milliseconds(250)
+    )
+    timer.setEventHandler { [weak self] in
+      guard let self, !self.isStopped else {
+        return
+      }
+      self.dispatch([.monitoringSnapshotRequested], flushesRequests: true)
+    }
+    snapshotTimer = timer
+    timer.resume()
+  }
+
+  private func dispatch(_ events: [TaskEvent], flushesRequests: Bool = false) {
+    DispatchQueue.main.async { [weak self] in
+      guard let self, !self.isStopped else {
+        return
+      }
+      events.forEach(self.deliver)
+      if flushesRequests {
+        self.flushRequests()
+      }
+    }
   }
 
   private static let defaultSocketPath =

@@ -122,12 +122,7 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
   }
 
   private func updatePanelContent() {
-    panel?.contentView = NSHostingView(
-      rootView: IdleBeaconView(
-        state: coordinator.viewState,
-        onActivate: { [weak self] in self?.handleBeaconActivation() }
-      )
-    )
+    panel?.update(state: coordinator.viewState)
   }
 
   private func activateCodex(threadID: String?) {

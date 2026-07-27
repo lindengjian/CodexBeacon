@@ -3,11 +3,21 @@ import CodexBeaconCore
 import SwiftUI
 
 @MainActor
+final class BeaconViewStateStore: ObservableObject {
+  @Published var state: BeaconViewState
+
+  init(state: BeaconViewState) {
+    self.state = state
+  }
+}
+
+@MainActor
 final class BeaconPanel: NSPanel {
   override var canBecomeKey: Bool { false }
   override var canBecomeMain: Bool { false }
 
   private let onDragEnded: () -> Void
+  private let stateStore: BeaconViewStateStore
 
   init(
     state: BeaconViewState,
@@ -15,6 +25,7 @@ final class BeaconPanel: NSPanel {
     onDragEnded: @escaping () -> Void
   ) {
     self.onDragEnded = onDragEnded
+    stateStore = BeaconViewStateStore(state: state)
     let dimensions = state.dimensions
     let contentRect = NSRect(
       x: 0,
@@ -46,7 +57,7 @@ final class BeaconPanel: NSPanel {
     isReleasedWhenClosed = false
     animationBehavior = .none
     contentView = NSHostingView(
-      rootView: IdleBeaconView(state: state, onActivate: onActivate)
+      rootView: IdleBeaconView(stateStore: stateStore, onActivate: onActivate)
     )
   }
 
@@ -63,5 +74,9 @@ final class BeaconPanel: NSPanel {
       height: placement.frame.height
     )
     setFrame(frame, display: true)
+  }
+
+  func update(state: BeaconViewState) {
+    stateStore.state = state
   }
 }

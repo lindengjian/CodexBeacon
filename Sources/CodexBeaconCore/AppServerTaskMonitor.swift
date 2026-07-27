@@ -29,6 +29,7 @@ struct AppServerTaskMonitor {
   private var pendingRequests: [Int: PendingRequest] = [:]
   private var observedThreads: [String: ObservedThread] = [:]
   private var outstandingInitialReads: Set<String> = []
+  private var snapshotThreadIDs: Set<String>?
   private var completedTaskIDs: Set<String> = []
   private var state = MonitoringState.notStarted
   private var nextRequestID = 1
@@ -75,6 +76,7 @@ struct AppServerTaskMonitor {
     pendingRequests.removeAll()
     observedThreads.removeAll()
     outstandingInitialReads.removeAll()
+    snapshotThreadIDs = nil
     requestLoadedThreads()
     return .monitoringUnavailable
   }
@@ -85,6 +87,14 @@ struct AppServerTaskMonitor {
 
   mutating func observationBecameStale() -> BeaconStatus {
     fail()
+  }
+
+  mutating func snapshotRequested() -> BeaconStatus {
+    guard state == .available, !hasPendingLoadedThreadsRead, !hasPendingThreadRead else {
+      return currentStatus
+    }
+    requestLoadedThreads()
+    return currentStatus
   }
 
   mutating func handle(message: String, observedAt: Date) -> BeaconStatus {
@@ -180,17 +190,18 @@ struct AppServerTaskMonitor {
     )
     let threadIDs = response.result.data
 
-    observedThreads.removeAll()
     outstandingInitialReads = Set(threadIDs)
+    snapshotThreadIDs = Set(threadIDs)
     guard !threadIDs.isEmpty else {
       state = .available
-      return .idle
+      reconcileSnapshot()
+      return aggregateStatus
     }
 
     for threadID in threadIDs {
       requestThread(threadID)
     }
-    return .monitoringUnavailable
+    return currentStatus
   }
 
   private mutating func handleThreadResponse(
@@ -204,16 +215,19 @@ struct AppServerTaskMonitor {
       return fail()
     }
     let isUserVisibleRoot =
-      !thread.ephemeral
-      && thread.source?.isDesktop == true
+      thread.source?.isDesktop == true
       && thread.threadSource != "system"
       && thread.parentThreadId == nil
+      && (!thread.ephemeral || thread.threadSource == "user")
     let taskState: ObservedTaskState
     if isUserVisibleRoot {
       guard
         let status = thread.status,
         let state = self.taskState(from: status)
       else {
+        if observedThreads[thread.id]?.isUserVisibleRoot == true {
+          return currentStatus
+        }
         return fail()
       }
       taskState = state
@@ -230,9 +244,10 @@ struct AppServerTaskMonitor {
     outstandingInitialReads.remove(thread.id)
 
     guard outstandingInitialReads.isEmpty, !hasPendingThreadRead else {
-      return .monitoringUnavailable
+      return currentStatus
     }
     state = .available
+    reconcileSnapshot()
     return aggregateStatus
   }
 
@@ -285,11 +300,18 @@ struct AppServerTaskMonitor {
       from: data
     )
     let threadID = notification.params.threadID
+    let previousThread = observedThreads[threadID]
     guard let taskState = taskState(from: notification.params.status) else {
-      return fail()
+      guard previousThread?.isUserVisibleRoot == true else {
+        return currentStatus
+      }
+      if !hasPendingRead(for: threadID) {
+        requestThread(threadID)
+      }
+      return currentStatus
     }
 
-    guard let previousThread = observedThreads[threadID] else {
+    guard let previousThread else {
       state = .collectingEvidence
       if !hasPendingRead(for: threadID) {
         requestThread(threadID)
@@ -366,6 +388,15 @@ struct AppServerTaskMonitor {
     }
   }
 
+  private var hasPendingLoadedThreadsRead: Bool {
+    pendingRequests.values.contains { pendingRequest in
+      if case .loadedThreads = pendingRequest {
+        return true
+      }
+      return false
+    }
+  }
+
   private func hasPendingRead(for threadID: String) -> Bool {
     pendingRequests.values.contains {
       guard case .thread(let pendingThreadID) = $0 else {
@@ -389,7 +420,16 @@ struct AppServerTaskMonitor {
     requests.removeAll()
     pendingRequests.removeAll()
     outstandingInitialReads.removeAll()
+    snapshotThreadIDs = nil
     return .monitoringUnavailable
+  }
+
+  private mutating func reconcileSnapshot() {
+    guard let snapshotThreadIDs else {
+      return
+    }
+    observedThreads = observedThreads.filter { snapshotThreadIDs.contains($0.key) }
+    self.snapshotThreadIDs = nil
   }
 
   private func updatedThread(

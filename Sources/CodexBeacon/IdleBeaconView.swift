@@ -8,8 +8,12 @@ private enum BeaconColor {
 }
 
 struct IdleBeaconView: View {
-  let state: BeaconViewState
+  @ObservedObject var stateStore: BeaconViewStateStore
   let onActivate: () -> Void
+
+  private var state: BeaconViewState {
+    stateStore.state
+  }
 
   var body: some View {
     ZStack {
