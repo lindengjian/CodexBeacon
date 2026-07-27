@@ -56,6 +56,21 @@ struct AppServerTaskMonitor {
     completedTaskIDs
   }
 
+  var workingTaskIDs: [String] {
+    let workingThreads = observedThreads.values.filter { thread in
+      thread.isUserVisibleRoot && thread.taskState == .working
+    }
+    return workingThreads
+      .map { (id: $0.id, observedAt: $0.observedAt) }
+      .sorted {
+        if $0.observedAt == $1.observedAt {
+          return $0.id < $1.id
+        }
+        return $0.observedAt < $1.observedAt
+      }
+      .map { $0.id }
+  }
+
   var status: BeaconStatus {
     currentStatus
   }
@@ -473,7 +488,8 @@ struct AppServerTaskMonitor {
       taskState: taskState,
       waitingSince: taskState == .waitingForYou
         ? previous?.waitingSince ?? observedAt
-        : nil
+        : nil,
+      observedAt: previous?.observedAt ?? observedAt
     )
   }
 }
@@ -511,6 +527,7 @@ private struct ObservedThread {
   let isUserVisibleRoot: Bool
   let taskState: ObservedTaskState
   let waitingSince: Date?
+  let observedAt: Date
 }
 
 private enum ObservedTaskState: Equatable {

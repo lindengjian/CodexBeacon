@@ -108,7 +108,7 @@ struct WaitingAndCompletionScenarioTests {
 
     #expect(coordinator.viewState.status == .idle)
     #expect(coordinator.viewState.unconfirmedCompletionTaskIDs.isEmpty)
-    #expect(coordinator.drainEffects() == [.activateCodex(threadID: nil)])
+    #expect(coordinator.drainEffects() == [.activateCodex(threadID: "succeeds")])
 
     let afterRestart = AppCoordinator()
     establishSnapshot(for: afterRestart, threads: ["succeeds": .idle])

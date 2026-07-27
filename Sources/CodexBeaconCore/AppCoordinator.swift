@@ -105,13 +105,23 @@ public final class AppCoordinator {
     case .system(.displayLayoutChanged(let layout)):
       updateBeaconPlacement(for: layout)
     case .user(.beaconActivated):
-      let waitingThreadID = taskMonitor.waitingTasks.first?.threadID
+      let navigationTarget: String?
+      switch taskMonitor.status {
+      case .waitingForYou:
+        navigationTarget = taskMonitor.waitingTasks.first?.threadID
+      case .completed:
+        navigationTarget = taskMonitor.unconfirmedCompletionTaskIDs.first
+      case .working:
+        navigationTarget = taskMonitor.workingTaskIDs.first
+      default:
+        navigationTarget = nil
+      }
       let confirmSnapshot = taskMonitor.unconfirmedCompletionTaskIDs
       taskMonitor.confirmCompletions(confirmSnapshot)
       presentTaskStatus(
         sharedRuntimeValidated ? taskMonitor.status : .monitoringUnavailable
       )
-      effects.append(.activateCodex(threadID: waitingThreadID))
+      effects.append(.activateCodex(threadID: navigationTarget))
     case .user(.beaconDragEnded(let displayIdentifier, let frame)):
       guard let display = displayLayout?.display(identifier: displayIdentifier) else {
         return

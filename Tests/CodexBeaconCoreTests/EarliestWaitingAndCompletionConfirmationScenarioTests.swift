@@ -83,6 +83,14 @@ struct EarliestWaitingAndCompletionConfirmationScenarioTests {
 
     #expect(coordinator.viewState.unconfirmedCompletionTaskIDs.isEmpty)
     #expect(coordinator.viewState.status == .idle)
+
+    let effects = coordinator.drainEffects()
+    guard case .activateCodex(let threadID) = effects.first else {
+      Issue.record("expected activateCodex effect")
+      return
+    }
+    #expect(threadID != nil)
+    #expect(["task-a", "task-b"].contains(threadID!))
   }
 
   @Test("new completions arriving after beacon activation are not pre-confirmed")
@@ -305,5 +313,74 @@ struct EarliestWaitingAndCompletionConfirmationScenarioTests {
 
     #expect(coordinator.viewState.status == .working)
     #expect(coordinator.viewState.unconfirmedCompletionTaskIDs.isEmpty)
+  }
+
+  @Test("beacon activation navigates to the working task when amber light is on")
+  func beaconActivationNavigatesToWorkingTask() {
+    let coordinator = AppCoordinator()
+
+    establishSnapshot(
+      for: coordinator,
+      threads: ["working-task": .working]
+    )
+
+    #expect(coordinator.viewState.status == .working)
+
+    coordinator.handle(.user(.beaconActivated))
+
+    #expect(
+      coordinator.drainEffects().contains(.activateCodex(threadID: "working-task"))
+    )
+  }
+
+  @Test("beacon activation navigates to the completed task when green light is on for completions")
+  func beaconActivationNavigatesToCompletedTask() {
+    let coordinator = AppCoordinator()
+
+    establishSnapshot(
+      for: coordinator,
+      threads: ["done-task": .working]
+    )
+
+    sendStatus(.idle, for: "done-task", to: coordinator)
+    for request in coordinator.drainAppServerRequests() {
+      coordinator.handle(
+        .task(
+          .appServerMessage(
+            """
+            {"id":\(request.id),"result":{"data":[{"id":"turn-done-task","status":"completed"}]}}
+            """
+          )
+        )
+      )
+    }
+
+    #expect(coordinator.viewState.status == .completed)
+    #expect(coordinator.viewState.unconfirmedCompletionTaskIDs == ["done-task"])
+
+    coordinator.handle(.user(.beaconActivated))
+
+    #expect(
+      coordinator.drainEffects().contains(.activateCodex(threadID: "done-task"))
+    )
+    #expect(coordinator.viewState.unconfirmedCompletionTaskIDs.isEmpty)
+  }
+
+  @Test("beacon activation navigates to the earliest working task by observation order")
+  func beaconActivationNavigatesToEarliestWorkingTask() {
+    let coordinator = AppCoordinator()
+
+    establishSnapshot(
+      for: coordinator,
+      threads: ["b-task": .working, "a-task": .working]
+    )
+
+    #expect(coordinator.viewState.status == .working)
+
+    coordinator.handle(.user(.beaconActivated))
+
+    #expect(
+      coordinator.drainEffects().contains(.activateCodex(threadID: "a-task"))
+    )
   }
 }
