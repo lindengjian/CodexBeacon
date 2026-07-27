@@ -6,6 +6,84 @@ import Testing
 
 @MainActor
 struct BeaconSettingsScenarioTests {
+  @Test("initial setup defaults launch at login on and preserves the user's choice when completed")
+  func initialSetupPersistsSelectedLaunchAtLoginChoice() {
+    var completedLaunchAtLogin: Bool?
+    let diagnostic = DesktopIntegrationDiagnostic(
+      health: .ready,
+      summary: "兼容",
+      instructions: "可开始监测。"
+    )
+    let setup = InitialSetupModel(
+      notificationStatus: "尚未请求",
+      diagnostic: diagnostic,
+      requestNotificationPermission: { completion in completion("已允许") },
+      diagnose: { completion in completion(diagnostic) },
+      repair: { completion in completion(diagnostic) },
+      complete: {
+        completedLaunchAtLogin = $0
+        return nil
+      }
+    )
+
+    #expect(setup.launchesAtLogin)
+
+    setup.launchesAtLogin = false
+    setup.finish()
+
+    #expect(completedLaunchAtLogin == false)
+  }
+
+  @Test("initial setup keeps the user in setup when launch-at-login registration fails")
+  func initialSetupShowsLaunchAtLoginFailure() {
+    let diagnostic = DesktopIntegrationDiagnostic(
+      health: .ready,
+      summary: "兼容",
+      instructions: "可开始监测。"
+    )
+    let setup = InitialSetupModel(
+      notificationStatus: "尚未请求",
+      diagnostic: diagnostic,
+      requestNotificationPermission: { completion in completion("已允许") },
+      diagnose: { completion in completion(diagnostic) },
+      repair: { completion in completion(diagnostic) },
+      complete: { _ in "无法更新登录启动。" }
+    )
+
+    setup.finish()
+
+    #expect(setup.completionError == "无法更新登录启动。")
+  }
+
+  @Test("settings can persist a changed launch-at-login choice and refresh local diagnostics")
+  func integrationSettingsRefreshesDiagnosticsAndPersistsLoginChoice() {
+    var persistedLaunchAtLogin: Bool?
+    let diagnostic = DesktopIntegrationDiagnostic(
+      health: .ready,
+      summary: "兼容",
+      instructions: "可开始监测。"
+    )
+    let settings = BeaconIntegrationSettingsModel(
+      launchesAtLogin: true,
+      notificationStatus: "尚未请求",
+      diagnostic: .init(health: .repairRequired, summary: "尚未检测", instructions: "请检测。"),
+      setLaunchAtLogin: { _ in nil },
+      requestNotificationPermission: { completion in completion("已允许") },
+      readNotificationStatus: { completion in completion("已允许") },
+      diagnose: { completion in completion(diagnostic) },
+      repair: { completion in completion(diagnostic) },
+      restoreDefaultIntegration: { completion in completion(diagnostic) },
+      persistLaunchAtLogin: { persistedLaunchAtLogin = $0 }
+    )
+
+    settings.updateLaunchAtLogin(false)
+    settings.refresh()
+
+    #expect(!settings.launchesAtLogin)
+    #expect(persistedLaunchAtLogin == false)
+    #expect(settings.diagnostic == diagnostic)
+  }
+
   @Test("settings size selection updates the actual Beacon panel and its global hotkey still toggles visibility")
   func settingsSelectionUpdatesPanelAndHotKeyBehavior() {
     _ = NSApplication.shared
