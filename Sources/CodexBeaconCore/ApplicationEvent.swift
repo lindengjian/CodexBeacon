@@ -2,6 +2,7 @@ import Foundation
 
 public enum TaskEvent: Equatable, Sendable {
   case monitoringConnectionEstablished(protocolCompatible: Bool)
+  case monitoringRuntimeValidated
   case monitoringConnectionFailed
   case monitoringObservationBecameStale
   case appServerMessage(String)

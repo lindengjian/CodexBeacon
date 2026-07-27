@@ -35,4 +35,29 @@ struct CoordinatorEventScenarioTests {
     #expect(!coordinator.viewState.isVisible)
     #expect(coordinator.drainEffects() == [.hideBeacon])
   }
+
+  @Test("shared-runtime mode stays unavailable until Desktop evidence is validated")
+  func sharedRuntimeEvidenceGatesTaskPresentation() {
+    let coordinator = AppCoordinator(requiresSharedRuntimeEvidence: true)
+
+    coordinator.handle(
+      .task(.monitoringConnectionEstablished(protocolCompatible: true))
+    )
+    let loadedListRequest = coordinator.drainAppServerRequests().first!
+    coordinator.handle(
+      .task(
+        .appServerMessage(
+          """
+          {"id":\(loadedListRequest.id),"result":{"data":[]}}
+          """
+        )
+      )
+    )
+
+    #expect(coordinator.viewState.status == .monitoringUnavailable)
+
+    coordinator.handle(.task(.monitoringRuntimeValidated))
+
+    #expect(coordinator.viewState.status == .idle)
+  }
 }

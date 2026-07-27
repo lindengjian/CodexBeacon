@@ -4,7 +4,7 @@ import SwiftUI
 
 @MainActor
 final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
-  private let coordinator = AppCoordinator()
+  private let coordinator = AppCoordinator(requiresSharedRuntimeEvidence: true)
   private var panel: BeaconPanel?
   private var taskMonitor: DesktopAppServerMonitor?
 

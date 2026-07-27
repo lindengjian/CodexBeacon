@@ -12,10 +12,15 @@ public final class AppCoordinator {
 
   private var effects: [BeaconEffect] = []
   private var taskMonitor = AppServerTaskMonitor()
+  private let requiresSharedRuntimeEvidence: Bool
+  private var sharedRuntimeValidated: Bool
   private var hasStarted = false
   private var observationTime = Date()
 
-  public init() {}
+  public init(requiresSharedRuntimeEvidence: Bool = false) {
+    self.requiresSharedRuntimeEvidence = requiresSharedRuntimeEvidence
+    sharedRuntimeValidated = !requiresSharedRuntimeEvidence
+  }
 
   public func start() {
     guard !hasStarted else {
@@ -30,17 +35,21 @@ public final class AppCoordinator {
   public func handle(_ event: ApplicationEvent) {
     switch event {
     case .task(.monitoringConnectionEstablished(let protocolCompatible)):
+      sharedRuntimeValidated = !requiresSharedRuntimeEvidence
       presentTaskStatus(
         taskMonitor.connectionEstablished(protocolCompatible: protocolCompatible)
       )
+    case .task(.monitoringRuntimeValidated):
+      sharedRuntimeValidated = true
+      presentTaskStatus(taskMonitor.status)
     case .task(.monitoringConnectionFailed):
+      sharedRuntimeValidated = false
       presentTaskStatus(taskMonitor.connectionFailed())
     case .task(.monitoringObservationBecameStale):
       presentTaskStatus(taskMonitor.observationBecameStale())
     case .task(.appServerMessage(let message)):
-      presentTaskStatus(
-        taskMonitor.handle(message: message, observedAt: observationTime)
-      )
+      let status = taskMonitor.handle(message: message, observedAt: observationTime)
+      presentTaskStatus(sharedRuntimeValidated ? status : .monitoringUnavailable)
     case .time(.advanced(let date)):
       observationTime = date
       viewState.lastUpdatedAt = date

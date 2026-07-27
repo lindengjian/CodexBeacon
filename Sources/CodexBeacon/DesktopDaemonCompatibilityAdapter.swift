@@ -36,8 +36,10 @@ final class DesktopDaemonCompatibilityAdapter {
         withIntermediateDirectories: true
       )
       try diagnosticStore.createDirectory()
-      let priorValue = launchctlEnvironmentValue()
-      try persist(AdoptionState(priorEnvironmentValue: priorValue))
+      if !fileManager.fileExists(atPath: stateURL.path) {
+        let priorValue = launchctlEnvironmentValue()
+        try persist(AdoptionState(priorEnvironmentValue: priorValue))
+      }
       try writeLaunchAgent(for: bundledCLIURL)
       try runLaunchctl(["bootout", serviceTarget], allowFailure: true)
       try runLaunchctl(["bootstrap", userDomain, launchAgentURL.path])
@@ -55,14 +57,14 @@ final class DesktopDaemonCompatibilityAdapter {
   /// Restores the exact launchd environment value that existed before Beacon
   /// installed its adapter, and removes only Beacon's labelled LaunchAgent.
   func rollback() {
+    guard let state = try? loadState() else {
+      diagnosticStore.record("Shared-daemon rollback was not attempted because Beacon ownership state is missing or unreadable.")
+      return
+    }
     _ = try? runLaunchctl(["bootout", serviceTarget], allowFailure: true)
     try? fileManager.removeItem(at: launchAgentURL)
-    if let state = try? loadState() {
-      if let priorValue = state.priorEnvironmentValue {
-        _ = try? runLaunchctl(["setenv", Self.environmentKey, priorValue])
-      } else {
-        _ = try? runLaunchctl(["unsetenv", Self.environmentKey])
-      }
+    if let priorValue = state.priorEnvironmentValue {
+      _ = try? runLaunchctl(["setenv", Self.environmentKey, priorValue])
     } else {
       _ = try? runLaunchctl(["unsetenv", Self.environmentKey])
     }

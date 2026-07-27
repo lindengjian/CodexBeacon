@@ -127,6 +127,7 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
       return
     }
 
+    let hasSharedDesktopRuntime: Bool
     if let thread = ((object["result"] as? [String: Any])?["thread"] as? [String: Any]),
       thread["source"] as? String == "vscode",
       thread["ephemeral"] as? Bool == false,
@@ -135,9 +136,15 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
     {
       sawSharedDesktopRuntime = true
       compatibilityAdapter.sharedRuntimeEvidenceObserved()
+      hasSharedDesktopRuntime = true
+    } else {
+      hasSharedDesktopRuntime = false
     }
 
     deliver(.appServerMessage(message))
+    if hasSharedDesktopRuntime {
+      deliver(.monitoringRuntimeValidated)
+    }
     flushRequests()
   }
 
