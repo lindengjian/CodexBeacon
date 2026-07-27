@@ -11,9 +11,14 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
   private var panel: BeaconPanel?
   private var taskMonitor: DesktopAppServerMonitor?
   private var screenParametersObserver: NSObjectProtocol?
+  private var frontmostAppObserver: NSObjectProtocol?
+  private var codexBundleID = "com.anthropic.codex"
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     coordinator.start()
+    coordinator.autoConfirmCondition = { [weak self] in
+      self?.canAutoConfirmCompletion() ?? false
+    }
     present(coordinator.viewState)
     perform(coordinator.drainEffects())
     updateDisplayLayout()
@@ -26,6 +31,17 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
         self?.updateDisplayLayout()
       }
     }
+    frontmostAppObserver = NSWorkspace.shared.notificationCenter.addObserver(
+      forName: NSWorkspace.didActivateApplicationNotification,
+      object: nil,
+      queue: .main
+    ) { [weak self] notification in
+      let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey]
+        as? NSRunningApplication
+      Task { @MainActor [weak self] in
+        self?.handleFrontmostAppChange(for: app)
+      }
+    }
     taskMonitor = DesktopAppServerMonitor(
       deliver: { [weak self] event in self?.handleTaskEvent(event) },
       requestsProvider: { [weak self] in self?.coordinator.drainAppServerRequests() ?? [] }
@@ -36,6 +52,9 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
   func applicationWillTerminate(_ notification: Notification) {
     if let screenParametersObserver {
       NotificationCenter.default.removeObserver(screenParametersObserver)
+    }
+    if let frontmostAppObserver {
+      NSWorkspace.shared.notificationCenter.removeObserver(frontmostAppObserver)
     }
   }
 
@@ -125,17 +144,111 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
     panel?.update(state: coordinator.viewState)
   }
 
+  private var isCodexFrontmost = false
+  private var codexFocusedScreenID: String?
+
+  private func handleFrontmostAppChange(for app: NSRunningApplication?) {
+    guard let app else {
+      return
+    }
+    let becameFrontmost = app.bundleIdentifier == codexBundleID
+    isCodexFrontmost = becameFrontmost
+    if !becameFrontmost {
+      codexFocusedScreenID = nil
+    }
+  }
+
+  private func canAutoConfirmCompletion() -> Bool {
+    guard isCodexFrontmost else {
+      return false
+    }
+    guard let beaconScreen = panel?.screen else {
+      return false
+    }
+    let beaconScreenID = displayIdentifier(for: beaconScreen)
+
+    if let cachedScreenID = codexFocusedScreenID {
+      return cachedScreenID == beaconScreenID
+    }
+
+    let codexApps = NSWorkspace.shared.runningApplications.filter {
+      $0.bundleIdentifier == codexBundleID
+    }
+    guard let codexApp = codexApps.first else {
+      return false
+    }
+    guard let codexScreenID = frontmostWindowScreenIdentifier(for: codexApp) else {
+      return false
+    }
+    codexFocusedScreenID = codexScreenID
+    return codexScreenID == beaconScreenID
+  }
+
+  private func frontmostWindowScreenIdentifier(
+    for app: NSRunningApplication
+  ) -> String? {
+    let windowList = CGWindowListCopyWindowInfo(
+      [.optionOnScreenOnly, .excludeDesktopElements],
+      kCGNullWindowID
+    ) as? [[CFString: Any]]
+
+    guard let windows = windowList else {
+      return nil
+    }
+
+    for window in windows {
+      guard
+        let ownerPID = window[kCGWindowOwnerPID] as? pid_t,
+        ownerPID == app.processIdentifier,
+        let layer = window[kCGWindowLayer] as? Int32,
+        layer == 0
+      else {
+        continue
+      }
+
+      guard
+        let boundsDict = window[kCGWindowBounds] as? [CFString: Any],
+        let x = (boundsDict["X" as CFString] as? NSNumber)?.doubleValue,
+        let y = (boundsDict["Y" as CFString] as? NSNumber)?.doubleValue,
+        let width = (boundsDict["Width" as CFString] as? NSNumber)?.doubleValue,
+        let height = (boundsDict["Height" as CFString] as? NSNumber)?.doubleValue
+      else {
+        continue
+      }
+
+      let frame = NSRect(x: x, y: y, width: width, height: height)
+      for screen in NSScreen.screens {
+        let intersection = screen.frame.intersection(frame)
+        if intersection.width > 0, intersection.height > 0 {
+          return displayIdentifier(for: screen)
+        }
+      }
+    }
+
+    return nil
+  }
+
   private func activateCodex(threadID: String?) {
     let route = URL(string: "codex://threads/\(threadID ?? "new")")!
     guard let applicationURL = NSWorkspace.shared.urlForApplication(toOpen: route) else {
       NSWorkspace.shared.open(route)
       return
     }
+    let configuration = NSWorkspace.OpenConfiguration()
+    let deepLinkThreadID = threadID
     NSWorkspace.shared.openApplication(
       at: applicationURL,
-      configuration: .init()
-    ) { _, _ in
-      NSWorkspace.shared.open(route)
+      configuration: configuration
+    ) { _, error in
+      guard error == nil else {
+        return
+      }
+      if let threadID = deepLinkThreadID {
+        let deepLink = URL(string: "codex://threads/\(threadID)")!
+        NSWorkspace.shared.open(deepLink)
+      } else {
+        NSWorkspace.shared.open(route)
+      }
     }
   }
 

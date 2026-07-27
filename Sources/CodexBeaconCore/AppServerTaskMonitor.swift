@@ -60,8 +60,8 @@ struct AppServerTaskMonitor {
     currentStatus
   }
 
-  mutating func confirmCompletions() {
-    completedTaskIDs.removeAll()
+  mutating func confirmCompletions(_ ids: Set<String>) {
+    completedTaskIDs.subtract(ids)
   }
 
   mutating func connectionEstablished(

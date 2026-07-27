@@ -21,6 +21,8 @@ public final class AppCoordinator {
   private var displayLayout: BeaconDisplayLayout?
   private var beaconAnchor: BeaconAnchor?
 
+  public var autoConfirmCondition: (() -> Bool)?
+
   public init(
     requiresSharedRuntimeEvidence: Bool = false,
     initialBeaconAnchor: BeaconAnchor? = nil
@@ -67,18 +69,27 @@ public final class AppCoordinator {
           : .monitoringUnavailable
       )
     case .task(.appServerMessage(let message)):
+      let completionsBefore = taskMonitor.unconfirmedCompletionTaskIDs
       let quotaHandled = quotaMonitor.handle(
         message: message, observedAt: observationTime)
-      let status: BeaconStatus
-      if quotaHandled {
-        status = taskMonitor.status
-      } else {
-        status = taskMonitor.handle(message: message, observedAt: observationTime)
+      if !quotaHandled {
+        _ = taskMonitor.handle(message: message, observedAt: observationTime)
       }
       if quotaHandled {
         viewState.quotaTrack = quotaTrackState(from: quotaMonitor.accountQuota)
       }
-      presentTaskStatus(sharedRuntimeValidated ? status : .monitoringUnavailable)
+      let newCompletions = taskMonitor.unconfirmedCompletionTaskIDs.subtracting(
+        completionsBefore)
+      if !newCompletions.isEmpty,
+        let policy = autoConfirmCondition,
+        sharedRuntimeValidated,
+        policy()
+      {
+        taskMonitor.confirmCompletions(newCompletions)
+      }
+      presentTaskStatus(
+        sharedRuntimeValidated ? taskMonitor.status : .monitoringUnavailable
+      )
     case .time(.advanced(let date)):
       observationTime = date
       viewState.lastUpdatedAt = date
@@ -95,7 +106,8 @@ public final class AppCoordinator {
       updateBeaconPlacement(for: layout)
     case .user(.beaconActivated):
       let waitingThreadID = taskMonitor.waitingTasks.first?.threadID
-      taskMonitor.confirmCompletions()
+      let confirmSnapshot = taskMonitor.unconfirmedCompletionTaskIDs
+      taskMonitor.confirmCompletions(confirmSnapshot)
       presentTaskStatus(
         sharedRuntimeValidated ? taskMonitor.status : .monitoringUnavailable
       )
