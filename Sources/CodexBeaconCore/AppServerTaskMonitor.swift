@@ -90,7 +90,11 @@ struct AppServerTaskMonitor {
   }
 
   mutating func snapshotRequested() -> BeaconStatus {
-    guard state == .available, !hasPendingLoadedThreadsRead, !hasPendingThreadRead else {
+    guard
+      state == .available || state == .collectingEvidence,
+      !hasPendingLoadedThreadsRead,
+      !hasPendingThreadRead
+    else {
       return currentStatus
     }
     requestLoadedThreads()
@@ -116,11 +120,22 @@ struct AppServerTaskMonitor {
         return try handleStatusNotification(data, observedAt: observedAt)
       }
 
-      guard
-        let requestID = header.id,
-        let pendingRequest = pendingRequests.removeValue(forKey: requestID)
-      else {
-        return fail()
+      guard let requestID = header.id else {
+        return currentStatus
+      }
+      guard let pendingRequest = pendingRequests.removeValue(forKey: requestID) else {
+        return currentStatus
+      }
+
+      if header.error != nil {
+        switch pendingRequest {
+        case .loadedThreads:
+          return currentStatus
+        case .thread(let threadID):
+          return handleThreadReadFailure(threadID)
+        case .latestTurn:
+          return currentStatus
+        }
       }
 
       switch pendingRequest {
@@ -247,6 +262,19 @@ struct AppServerTaskMonitor {
       return currentStatus
     }
     state = .available
+    reconcileSnapshot()
+    return aggregateStatus
+  }
+
+  private mutating func handleThreadReadFailure(_ threadID: String) -> BeaconStatus {
+    outstandingInitialReads.remove(threadID)
+
+    guard outstandingInitialReads.isEmpty, !hasPendingThreadRead else {
+      return currentStatus
+    }
+    guard state == .available else {
+      return .monitoringUnavailable
+    }
     reconcileSnapshot()
     return aggregateStatus
   }
@@ -505,7 +533,10 @@ private enum MonitoringState {
 private struct MessageHeader: Decodable {
   let id: Int?
   let method: String?
+  let error: AppServerResponseError?
 }
+
+private struct AppServerResponseError: Decodable {}
 
 private struct LoadedThreadsResponse: Decodable {
   let result: LoadedThreadsResult

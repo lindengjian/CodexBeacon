@@ -755,6 +755,78 @@ struct AppServerTaskStateScenarioTests {
     #expect(coordinator.viewState.lights[1].illumination == .steady)
   }
 
+  @Test("a transient thread read error during a refresh retains the last known task state")
+  func refreshThreadReadErrorRetainsLastKnownTaskState() {
+    let coordinator = AppCoordinator()
+
+    coordinator.handle(.task(.monitoringConnectionEstablished(protocolCompatible: true)))
+    let initialListRequest = coordinator.drainAppServerRequests().first!
+    coordinator.handle(
+      .task(.appServerMessage("""
+        {"id":\(initialListRequest.id),"result":{"data":["switching-thread"]}}
+        """))
+    )
+    let initialReadRequest = coordinator.drainAppServerRequests().first!
+    coordinator.handle(
+      .task(.appServerMessage("""
+        {"id":\(initialReadRequest.id),"result":{"thread":{"id":"switching-thread","source":"vscode","ephemeral":false,"parentThreadId":null,"status":{"type":"active","activeFlags":[]}}}}
+        """))
+    )
+    #expect(coordinator.viewState.status == .working)
+
+    coordinator.handle(.task(.monitoringSnapshotRequested))
+    let refreshListRequest = coordinator.drainAppServerRequests().first!
+    coordinator.handle(
+      .task(.appServerMessage("""
+        {"id":\(refreshListRequest.id),"result":{"data":["switching-thread"]}}
+        """))
+    )
+    let refreshReadRequest = coordinator.drainAppServerRequests().first!
+
+    coordinator.handle(
+      .task(.appServerMessage("""
+        {"id":\(refreshReadRequest.id),"error":{"message":"Thread is no longer loaded"}}
+        """))
+    )
+
+    #expect(coordinator.viewState.status == .working)
+    #expect(coordinator.viewState.lights[0].illumination == .off)
+    #expect(coordinator.viewState.lights[1].illumination == .steady)
+  }
+
+  @Test("an initial thread read error is retried by the next snapshot")
+  func initialThreadReadErrorRecoversOnNextSnapshot() {
+    let coordinator = AppCoordinator()
+
+    coordinator.handle(.task(.monitoringConnectionEstablished(protocolCompatible: true)))
+    let initialListRequest = coordinator.drainAppServerRequests().first!
+    coordinator.handle(
+      .task(.appServerMessage("""
+        {"id":\(initialListRequest.id),"result":{"data":["switching-thread"]}}
+        """))
+    )
+    let initialReadRequest = coordinator.drainAppServerRequests().first!
+    coordinator.handle(
+      .task(.appServerMessage("""
+        {"id":\(initialReadRequest.id),"error":{"message":"Thread is no longer loaded"}}
+        """))
+    )
+    #expect(coordinator.viewState.status == .monitoringUnavailable)
+
+    coordinator.handle(.task(.monitoringSnapshotRequested))
+    let retryListRequest = coordinator.drainAppServerRequests().first
+    #expect(retryListRequest?.method == "thread/loaded/list")
+
+    coordinator.handle(
+      .task(.appServerMessage("""
+        {"id":\(retryListRequest!.id),"result":{"data":[]}}
+        """))
+    )
+
+    #expect(coordinator.viewState.status == .idle)
+    #expect(coordinator.viewState.lights[0].illumination == .off)
+  }
+
   @Test("unrelated App Server notifications do not invalidate task evidence")
   func unrelatedNotificationDoesNotChangeAggregate() {
     let coordinator = AppCoordinator()
