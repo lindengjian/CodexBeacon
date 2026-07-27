@@ -1,6 +1,12 @@
 import CodexBeaconCore
 import SwiftUI
 
+private enum BeaconColor {
+  static let red = Color(red: 0.95, green: 0.18, blue: 0.17)
+  static let amber = Color(red: 0.98, green: 0.61, blue: 0.12)
+  static let green = Color(red: 0.17, green: 0.82, blue: 0.36)
+}
+
 struct IdleBeaconView: View {
   let state: BeaconViewState
   let onActivate: () -> Void
@@ -136,11 +142,11 @@ private struct LightRecess: View {
   private var color: Color {
     switch light.color {
     case .red:
-      Color(red: 0.95, green: 0.18, blue: 0.17)
+      BeaconColor.red
     case .amber:
-      Color(red: 0.98, green: 0.61, blue: 0.12)
+      BeaconColor.amber
     case .green:
-      Color(red: 0.17, green: 0.82, blue: 0.36)
+      BeaconColor.green
     }
   }
 }
@@ -148,24 +154,145 @@ private struct LightRecess: View {
 private struct QuotaTrack: View {
   let state: QuotaTrackState
   let orientation: BeaconOrientation
+  @State private var isHovering = false
+
+  private var isVertical: Bool { orientation == .vertical }
+  private var trackWidth: Double { isVertical ? 8 : 52 }
+  private var trackHeight: Double { isVertical ? 52 : 8 }
 
   var body: some View {
-    Capsule()
-      .fill(trackColor)
-      .overlay {
-        Capsule()
-          .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
+    ZStack {
+      if state.style == .dashed {
+        dashedTrack
+      } else {
+        filledTrack
       }
-      .frame(
-        width: orientation == .vertical ? 8 : 52,
-        height: orientation == .vertical ? 52 : 8
-      )
+    }
+    .onHover { hovering in
+      isHovering = hovering && state.style == .gauge && !state.detailWindows.isEmpty
+    }
+    .overlay(alignment: .top) {
+      if isHovering {
+        detailPopover
+          .offset(y: -8)
+      }
+    }
   }
 
-  private var trackColor: Color {
+  private var filledTrack: some View {
+    ZStack(alignment: isVertical ? .bottom : .leading) {
+      Capsule()
+        .fill(trackBackgroundColor)
+      if state.style == .gauge {
+        Capsule()
+          .fill(gaugeFillColor)
+          .frame(
+            width: isVertical ? trackWidth : trackWidth * state.fillFraction,
+            height: isVertical ? trackHeight * state.fillFraction : trackHeight
+          )
+      }
+    }
+    .frame(width: trackWidth, height: trackHeight)
+    .clipShape(Capsule())
+    .overlay {
+      Capsule()
+        .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
+    }
+  }
+
+  private var dashedTrack: some View {
+    Capsule()
+      .strokeBorder(
+        Color.white.opacity(0.13),
+        style: StrokeStyle(lineWidth: 1, dash: [4, 4])
+      )
+      .frame(width: trackWidth, height: trackHeight)
+  }
+
+  private var gaugeFillColor: Color {
+    let fraction = state.fillFraction
+    if fraction > 0.5 {
+      return BeaconColor.green
+    } else if fraction > 0.15 {
+      return BeaconColor.amber
+    } else {
+      return BeaconColor.red
+    }
+  }
+
+  private var trackBackgroundColor: Color {
     switch state.style {
     case .neutral:
       Color.white.opacity(0.12)
+    case .gauge:
+      Color.white.opacity(0.08)
+    case .dashed:
+      Color.clear
     }
+  }
+
+  private var detailPopover: some View {
+    VStack(alignment: .leading, spacing: 4) {
+      ForEach(state.detailWindows, id: \.windowKey) { window in
+        HStack {
+          Text(displayName(for: window))
+            .font(.system(size: 9, weight: .medium))
+            .foregroundColor(.white.opacity(0.8))
+          Spacer()
+          Text(percentageText(for: window))
+            .font(.system(size: 9, weight: .semibold))
+            .foregroundColor(.white.opacity(0.9))
+            .monospacedDigit()
+        }
+        if let resetText = resetText(for: window) {
+          Text(resetText)
+            .font(.system(size: 8))
+            .foregroundColor(.white.opacity(0.4))
+        }
+        if window.windowKey != state.detailWindows.last?.windowKey {
+          Divider()
+            .background(Color.white.opacity(0.1))
+        }
+      }
+    }
+    .padding(.horizontal, 10)
+    .padding(.vertical, 8)
+    .background(
+      RoundedRectangle(cornerRadius: 8, style: .continuous)
+        .fill(Color(red: 0.08, green: 0.08, blue: 0.10))
+    )
+    .overlay {
+      RoundedRectangle(cornerRadius: 8, style: .continuous)
+        .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
+    }
+    .frame(minWidth: 160)
+    .fixedSize()
+  }
+
+  private func displayName(for window: QuotaWindow) -> String {
+    let hours = window.durationSeconds / 3600
+    if hours >= 24 {
+      let days = Int(hours / 24)
+      return "\(days)d window"
+    }
+    if hours >= 1 {
+      if hours == floor(hours) {
+        return "\(Int(hours))h window"
+      }
+      return String(format: "%.1fh window", hours)
+    }
+    let minutes = Int(window.durationSeconds / 60)
+    return "\(minutes)m window"
+  }
+
+  private func percentageText(for window: QuotaWindow) -> String {
+    String(format: "%.0f%%", window.remainingPercentage)
+  }
+
+  private func resetText(for window: QuotaWindow) -> String? {
+    guard let resetAt = window.resetAt else { return nil }
+    let formatter = DateFormatter()
+    formatter.dateFormat = "MMM d, HH:mm"
+    return "resets \(formatter.string(from: resetAt))"
   }
 }

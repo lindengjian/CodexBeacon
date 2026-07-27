@@ -16,6 +16,14 @@ public struct AppServerRequest: Equatable, Sendable {
   }
 }
 
+extension AppServerRequest {
+  init(id: Int, method: String) {
+    self.id = id
+    self.method = method
+    self.threadID = nil
+  }
+}
+
 struct AppServerTaskMonitor {
   private var requests: [AppServerRequest] = []
   private var pendingRequests: [Int: PendingRequest] = [:]

@@ -95,13 +95,23 @@ public struct BeaconLightState: Equatable, Sendable {
 
 public enum QuotaTrackStyle: Equatable, Sendable {
   case neutral
+  case gauge
+  case dashed
 }
 
 public struct QuotaTrackState: Equatable, Sendable {
   public let style: QuotaTrackStyle
+  public let fillFraction: Double
+  public let detailWindows: [QuotaWindow]
 
-  public init(style: QuotaTrackStyle) {
+  public init(
+    style: QuotaTrackStyle = .neutral,
+    fillFraction: Double = 0,
+    detailWindows: [QuotaWindow] = []
+  ) {
     self.style = style
+    self.fillFraction = fillFraction
+    self.detailWindows = detailWindows
   }
 }
 
@@ -111,7 +121,7 @@ public struct BeaconViewState: Equatable, Sendable {
   public var orientation: BeaconOrientation
   public let surface: BeaconSurfaceState
   public private(set) var lights: [BeaconLightState]
-  public let quotaTrack: QuotaTrackState
+  public var quotaTrack: QuotaTrackState
   public var status: BeaconStatus
   public var lastUpdatedAt: Date?
   public var reducesMotion: Bool

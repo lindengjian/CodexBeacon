@@ -13,6 +13,7 @@ public final class AppCoordinator {
 
   private var effects: [BeaconEffect] = []
   private var taskMonitor = AppServerTaskMonitor()
+  private var quotaMonitor = AppServerQuotaMonitor()
   private let requiresSharedRuntimeEvidence: Bool
   private var sharedRuntimeValidated: Bool
   private var hasStarted = false
@@ -46,16 +47,31 @@ public final class AppCoordinator {
       presentTaskStatus(
         taskMonitor.connectionEstablished(protocolCompatible: protocolCompatible)
       )
+      quotaMonitor.connectionEstablished()
     case .task(.monitoringRuntimeValidated):
       sharedRuntimeValidated = true
       presentTaskStatus(taskMonitor.status)
     case .task(.monitoringConnectionFailed):
       sharedRuntimeValidated = false
       presentTaskStatus(taskMonitor.connectionFailed())
+      quotaMonitor.connectionFailed()
+      viewState.quotaTrack = quotaTrackState(from: quotaMonitor.accountQuota)
     case .task(.monitoringObservationBecameStale):
       presentTaskStatus(taskMonitor.observationBecameStale())
+      quotaMonitor.observationBecameStale()
+      viewState.quotaTrack = quotaTrackState(from: quotaMonitor.accountQuota)
     case .task(.appServerMessage(let message)):
-      let status = taskMonitor.handle(message: message, observedAt: observationTime)
+      let quotaHandled = quotaMonitor.handle(
+        message: message, observedAt: observationTime)
+      let status: BeaconStatus
+      if quotaHandled {
+        status = taskMonitor.status
+      } else {
+        status = taskMonitor.handle(message: message, observedAt: observationTime)
+      }
+      if quotaHandled {
+        viewState.quotaTrack = quotaTrackState(from: quotaMonitor.accountQuota)
+      }
       presentTaskStatus(sharedRuntimeValidated ? status : .monitoringUnavailable)
     case .time(.advanced(let date)):
       observationTime = date
@@ -94,7 +110,7 @@ public final class AppCoordinator {
   }
 
   public func drainAppServerRequests() -> [AppServerRequest] {
-    taskMonitor.drainRequests()
+    taskMonitor.drainRequests() + quotaMonitor.drainRequests()
   }
 
   private func presentTaskStatus(_ status: BeaconStatus) {
@@ -134,5 +150,17 @@ public final class AppCoordinator {
     self.beaconAnchor = placement.anchor
     viewState.orientation = placement.anchor.edge.orientation
     effects.append(.placeBeacon(placement))
+  }
+
+  private func quotaTrackState(from quota: AccountQuotaState) -> QuotaTrackState {
+    guard quota.isAvailable, let selected = quota.selectedWindow else {
+      return QuotaTrackState(style: .dashed)
+    }
+    let fill = max(0, min(1, selected.remainingPercentage / 100))
+    return QuotaTrackState(
+      style: .gauge,
+      fillFraction: fill,
+      detailWindows: quota.windows
+    )
   }
 }
