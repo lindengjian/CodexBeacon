@@ -1,4 +1,5 @@
 import AppKit
+import Carbon
 import CodexBeaconCore
 import SwiftUI
 
@@ -13,6 +14,8 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
   private var screenParametersObserver: NSObjectProtocol?
   private var frontmostAppObserver: NSObjectProtocol?
   private var codexBundleID = "com.anthropic.codex"
+  private var hotKeyReference: EventHotKeyRef?
+  private var hotKeyEventHandlerReference: EventHandlerRef?
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     coordinator.start()
@@ -47,6 +50,7 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
       requestsProvider: { [weak self] in self?.coordinator.drainAppServerRequests() ?? [] }
     )
     taskMonitor?.start()
+    registerGlobalHotKey()
   }
 
   func applicationWillTerminate(_ notification: Notification) {
@@ -56,6 +60,7 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
     if let frontmostAppObserver {
       NSWorkspace.shared.notificationCenter.removeObserver(frontmostAppObserver)
     }
+    unregisterGlobalHotKey()
   }
 
   private func handleTaskEvent(_ event: TaskEvent) {
@@ -70,6 +75,10 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
       onActivate: { [weak self] in self?.handleBeaconActivation() },
       onDragEnded: { [weak self] in self?.handleBeaconDragEnd() }
     )
+    panel.onRightClick = { [weak self] event in
+      guard let self else { return }
+      self.presentContextMenu(for: panel, with: event)
+    }
     self.panel = panel
     panel.center()
   }
@@ -93,8 +102,7 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
 
   private func handleBeaconActivation() {
     coordinator.handle(.user(.beaconActivated))
-    updatePanelContent()
-    perform(coordinator.drainEffects())
+    applyCoordinatorUpdate()
   }
 
   private func handleBeaconDragEnd() {
@@ -110,8 +118,7 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
         )
       )
     )
-    updatePanelContent()
-    perform(coordinator.drainEffects())
+    applyCoordinatorUpdate()
   }
 
   private func updateDisplayLayout() {
@@ -136,12 +143,124 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
         )
       )
     )
-    updatePanelContent()
-    perform(coordinator.drainEffects())
+    applyCoordinatorUpdate()
   }
 
   private func updatePanelContent() {
     panel?.update(state: coordinator.viewState)
+  }
+
+  // MARK: - Global Hotkey
+
+  private func registerGlobalHotKey() {
+    var eventType = EventTypeSpec(
+      eventClass: OSType(kEventClassKeyboard),
+      eventKind: OSType(kEventHotKeyPressed)
+    )
+
+    let selfPtr = Unmanaged.passUnretained(self).toOpaque()
+
+    InstallEventHandler(
+      GetApplicationEventTarget(),
+      { (_, _, userData) -> OSStatus in
+        guard let userData else { return OSStatus(eventNotHandledErr) }
+        let delegate = Unmanaged<BeaconAppDelegate>.fromOpaque(userData)
+          .takeUnretainedValue()
+        DispatchQueue.main.async {
+          delegate.toggleBeaconVisibility()
+        }
+        return noErr
+      },
+      1,
+      &eventType,
+      selfPtr,
+      &hotKeyEventHandlerReference
+    )
+
+    let hotKeyID = EventHotKeyID(signature: 0x4344_424B, id: 1)  // 'CDBK'
+    let status = RegisterEventHotKey(
+      UInt32(kVK_ANSI_C),
+      UInt32(controlKey | optionKey | cmdKey),
+      hotKeyID,
+      GetApplicationEventTarget(),
+      0,
+      &hotKeyReference
+    )
+
+    if status != noErr {
+      hotKeyReference = nil
+    }
+  }
+
+  private func unregisterGlobalHotKey() {
+    if let hotKeyReference {
+      UnregisterEventHotKey(hotKeyReference)
+      self.hotKeyReference = nil
+    }
+    if let hotKeyEventHandlerReference {
+      RemoveEventHandler(hotKeyEventHandlerReference)
+      self.hotKeyEventHandlerReference = nil
+    }
+  }
+
+  private func applyCoordinatorUpdate() {
+    updatePanelContent()
+    perform(coordinator.drainEffects())
+  }
+
+  private func toggleBeaconVisibility() {
+    let toggledVisibility = !coordinator.viewState.isVisible
+    coordinator.handle(.system(.visibilityChanged(toggledVisibility)))
+    applyCoordinatorUpdate()
+  }
+
+  // MARK: - Context Menu
+
+  private func presentContextMenu(for panel: BeaconPanel, with event: NSEvent) {
+    let menu = NSMenu(title: "")
+
+    let settingsItem = NSMenuItem(
+      title: "设置",
+      action: #selector(handleSettingsFromMenu),
+      keyEquivalent: ""
+    )
+    settingsItem.target = self
+
+    let isVisible = coordinator.viewState.isVisible
+    let hideShowItem = NSMenuItem(
+      title: isVisible ? "临时隐藏" : "显示 Beacon",
+      action: #selector(handleToggleVisibilityFromMenu),
+      keyEquivalent: ""
+    )
+    hideShowItem.target = self
+
+    let quitItem = NSMenuItem(
+      title: "退出",
+      action: #selector(handleQuitFromMenu),
+      keyEquivalent: ""
+    )
+    quitItem.target = self
+
+    menu.items = [settingsItem, hideShowItem, quitItem]
+
+    guard let contentView = panel.contentView else {
+      return
+    }
+    NSMenu.popUpContextMenu(menu, with: event, for: contentView)
+  }
+
+  @objc private func handleSettingsFromMenu() {
+    // Acceptance criteria #5: opening settings does not change
+    // current task or quota state.
+    NSApp.activate(ignoringOtherApps: true)
+  }
+
+  @objc private func handleToggleVisibilityFromMenu() {
+    toggleBeaconVisibility()
+  }
+
+  @objc private func handleQuitFromMenu() {
+    NSApplication.shared.terminate(nil)
   }
 
   private var isCodexFrontmost = false
