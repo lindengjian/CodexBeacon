@@ -31,6 +31,41 @@ struct AccountQuotaScenarioTests {
     #expect(refreshRequests.first?.id != initialQuotaRequest?.id)
   }
 
+  @Test("a stale quota snapshot is hidden until a later read succeeds")
+  func staleQuotaSnapshotIsHiddenUntilReadSucceeds() {
+    let requestIDs = AppServerRequestIDGenerator()
+    var monitor = AppServerQuotaMonitor(requestIDGenerator: requestIDs)
+    let start = Date(timeIntervalSince1970: 1_753_353_600)
+
+    monitor.connectionEstablished()
+    let initialRequest = monitor.drainRequests().first!
+    let handledInitialSnapshot = monitor.handle(
+      message: """
+        {"id":\(initialRequest.id),"result":{"rateLimits":{"week":{"durationSeconds":604800,"usedPercent":69}}}}
+        """,
+      observedAt: start
+    )
+    #expect(handledInitialSnapshot)
+    #expect(monitor.accountQuota.isAvailable)
+
+    let becameStale = monitor.snapshotBecameStale(
+      at: start.addingTimeInterval(17), after: 17)
+    #expect(becameStale)
+    #expect(!monitor.accountQuota.isAvailable)
+
+    monitor.snapshotRequested()
+    let recoveryRequest = monitor.drainRequests().first!
+    let handledRecoverySnapshot = monitor.handle(
+      message: """
+        {"id":\(recoveryRequest.id),"result":{"rateLimits":{"week":{"durationSeconds":604800,"usedPercent":75}}}}
+        """,
+      observedAt: start.addingTimeInterval(18)
+    )
+    #expect(handledRecoverySnapshot)
+    #expect(monitor.accountQuota.isAvailable)
+    #expect(monitor.accountQuota.remainingPercentage == 25)
+  }
+
   @Test("task and quota requests share one collision-free ID sequence")
   func taskAndQuotaRequestsUseDistinctIDs() {
     let coordinator = AppCoordinator()

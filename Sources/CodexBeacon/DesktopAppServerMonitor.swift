@@ -24,8 +24,14 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
   private var reconnectBackoff = MonitoringReconnectBackoff()
   private var retryWorkItem: DispatchWorkItem?
   private var snapshotTimer: DispatchSourceTimer?
-  private var quotaRefreshTimer: DispatchSourceTimer?
   private var quotaRefreshInterval = QuotaRefreshSchedule.interval(for: .idle)
+  private lazy var quotaRefreshTimer = QuotaRefreshTimer(
+    interval: quotaRefreshInterval
+  ) { [weak self] in
+    guard let self, !self.isStopped else { return }
+    self.dispatch([.quotaSnapshotRequested], flushesRequests: true)
+  }
+  private var quotaRefreshRequests: [Int: Date] = [:]
   private var canRefreshQuota = false
   private var connectionAttemptInFlight = false
   private var connectionGeneration = 0
@@ -56,8 +62,8 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
     retryWorkItem = nil
     snapshotTimer?.cancel()
     snapshotTimer = nil
-    quotaRefreshTimer?.cancel()
-    quotaRefreshTimer = nil
+    quotaRefreshTimer.stop()
+    quotaRefreshRequests.removeAll()
     canRefreshQuota = false
     connectionAttemptInFlight = false
     connectionGeneration += 1
@@ -240,6 +246,8 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
       return
     }
 
+    recordQuotaRefreshResponse(from: object)
+
     if !didInitialize {
       guard object["id"] as? Int == 1, object["error"] == nil else {
         fail("The shared App Server rejected passive initialization.")
@@ -314,6 +322,9 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
         params["sortDirection"] = "desc"
         params["itemsView"] = "summary"
       }
+      if request.method == "account/rateLimits/read" {
+        recordQuotaRefreshRequest(request.id)
+      }
       client?.send(["id": request.id, "method": request.method, "params": params])
     }
   }
@@ -328,8 +339,8 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
     client = nil
     snapshotTimer?.cancel()
     snapshotTimer = nil
-    quotaRefreshTimer?.cancel()
-    quotaRefreshTimer = nil
+    quotaRefreshTimer.stop()
+    quotaRefreshRequests.removeAll()
     canRefreshQuota = false
     didInitialize = false
     sawSharedDesktopRuntime = false
@@ -372,23 +383,10 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
   }
 
   private func startQuotaRefreshTimer() {
-    guard quotaRefreshTimer == nil, canRefreshQuota, !isStopped else {
+    guard canRefreshQuota, !isStopped else {
       return
     }
-    let timer = DispatchSource.makeTimerSource(queue: .main)
-    timer.schedule(
-      deadline: .now() + quotaRefreshInterval,
-      repeating: quotaRefreshInterval,
-      leeway: .milliseconds(500)
-    )
-    timer.setEventHandler { [weak self] in
-      guard let self, !self.isStopped else {
-        return
-      }
-      self.dispatch([.quotaSnapshotRequested], flushesRequests: true)
-    }
-    quotaRefreshTimer = timer
-    timer.resume()
+    quotaRefreshTimer.start()
   }
 
   func updateQuotaRefreshInterval(for status: BeaconStatus) {
@@ -400,9 +398,32 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
     guard canRefreshQuota else {
       return
     }
-    quotaRefreshTimer?.cancel()
-    quotaRefreshTimer = nil
-    startQuotaRefreshTimer()
+    quotaRefreshTimer.update(interval: interval)
+  }
+
+  private func recordQuotaRefreshRequest(_ requestID: Int) {
+    let now = Date()
+    quotaRefreshRequests = quotaRefreshRequests.filter {
+      now.timeIntervalSince($0.value) < 60
+    }
+    quotaRefreshRequests[requestID] = now
+    Logger(subsystem: "com.codexbeacon", category: "quota-refresh").debug(
+      "[quota-refresh] sent account/rateLimits/read id=\(requestID, privacy: .public)"
+    )
+  }
+
+  private func recordQuotaRefreshResponse(from object: [String: Any]) {
+    guard
+      let requestID = object["id"] as? Int,
+      let sentAt = quotaRefreshRequests.removeValue(forKey: requestID)
+    else {
+      return
+    }
+    let elapsedMilliseconds = Int(Date().timeIntervalSince(sentAt) * 1_000)
+    let outcome = object["error"] == nil ? "success" : "error"
+    Logger(subsystem: "com.codexbeacon", category: "quota-refresh").debug(
+      "[quota-refresh] received \(outcome, privacy: .public) id=\(requestID, privacy: .public) latency_ms=\(elapsedMilliseconds, privacy: .public)"
+    )
   }
 
   private func dispatch(_ events: [TaskEvent], flushesRequests: Bool = false) {

@@ -5,6 +5,7 @@ struct AppServerQuotaMonitor {
   private var windows: [String: QuotaWindow] = [:]
   private var state: QuotaMonitorState = .notStarted
   private var pendingSnapshotRequestID: Int?
+  private var lastSuccessfulSnapshotAt: Date?
   private var requests: [AppServerRequest] = []
 
   init(requestIDGenerator: AppServerRequestIDGenerator) {
@@ -35,6 +36,7 @@ struct AppServerQuotaMonitor {
     state = .waitingForSnapshot
     windows.removeAll()
     pendingSnapshotRequestID = nil
+    lastSuccessfulSnapshotAt = nil
     requests.removeAll()
     requestSnapshot()
   }
@@ -43,6 +45,7 @@ struct AppServerQuotaMonitor {
     state = .unavailable
     windows.removeAll()
     pendingSnapshotRequestID = nil
+    lastSuccessfulSnapshotAt = nil
     requests.removeAll()
   }
 
@@ -55,6 +58,23 @@ struct AppServerQuotaMonitor {
       return
     }
     requestSnapshot()
+  }
+
+  /// Keeps stale quota data from being displayed as a current account balance.
+  /// A later successful snapshot restores availability automatically.
+  mutating func snapshotBecameStale(
+    at observedAt: Date,
+    after maximumAge: TimeInterval
+  ) -> Bool {
+    guard
+      state == .available,
+      let lastSuccessfulSnapshotAt,
+      observedAt.timeIntervalSince(lastSuccessfulSnapshotAt) >= maximumAge
+    else {
+      return false
+    }
+    state = .stale
+    return true
   }
 
   /// Returns `true` when the message is a quota-related message and was handled.
@@ -73,12 +93,15 @@ struct AppServerQuotaMonitor {
       guard method == QuotaMethod.rateLimitsUpdated else {
         return false
       }
-      return handleRateLimitsNotification(data)
+      return handleRateLimitsNotification(data, observedAt: observedAt)
     }
 
     if let requestID = header.id, requestID == pendingSnapshotRequestID {
       pendingSnapshotRequestID = nil
-      _ = handleRateLimitsSnapshot(data)
+      let updated = handleRateLimitsSnapshot(data, observedAt: observedAt)
+      if !updated, lastSuccessfulSnapshotAt == nil {
+        state = .waitingForSnapshot
+      }
       return true
     }
 
@@ -97,7 +120,7 @@ struct AppServerQuotaMonitor {
     requests.append(request)
   }
 
-  private mutating func handleRateLimitsSnapshot(_ data: Data) -> Bool {
+  private mutating func handleRateLimitsSnapshot(_ data: Data, observedAt: Date) -> Bool {
     guard let response = try? JSONDecoder().decode(RateLimitsResponse.self, from: data) else {
       return false
     }
@@ -106,10 +129,11 @@ struct AppServerQuotaMonitor {
       windows[key] = window(from: entry, key: key, previous: nil)
     }
     state = .available
+    lastSuccessfulSnapshotAt = observedAt
     return true
   }
 
-  private mutating func handleRateLimitsNotification(_ data: Data) -> Bool {
+  private mutating func handleRateLimitsNotification(_ data: Data, observedAt: Date) -> Bool {
     guard
       let notification = try? JSONDecoder().decode(
         RateLimitsNotification.self, from: data)
@@ -121,9 +145,8 @@ struct AppServerQuotaMonitor {
     for (key, entry) in notification.params.rateLimits {
       windows[key] = window(from: entry, key: key, previous: previous[key])
     }
-    if state == .waitingForSnapshot {
-      state = .available
-    }
+    state = .available
+    lastSuccessfulSnapshotAt = observedAt
     return true
   }
 
@@ -151,6 +174,7 @@ private enum QuotaMonitorState {
   case notStarted
   case waitingForSnapshot
   case available
+  case stale
   case unavailable
 }
 

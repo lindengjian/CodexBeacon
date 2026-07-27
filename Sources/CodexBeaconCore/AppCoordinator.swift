@@ -105,6 +105,10 @@ public final class AppCoordinator {
     case .time(.advanced(let date)):
       observationTime = date
       viewState.lastUpdatedAt = date
+      let maximumQuotaAge = QuotaRefreshSchedule.interval(for: viewState.status) * 3 + 2
+      if quotaMonitor.snapshotBecameStale(at: date, after: maximumQuotaAge) {
+        viewState.quotaTrack = quotaTrackState(from: quotaMonitor.accountQuota)
+      }
     case .system(.reduceMotionChanged(let reducesMotion)):
       viewState.reducesMotion = reducesMotion
     case .system(.visibilityChanged(let isVisible)):
