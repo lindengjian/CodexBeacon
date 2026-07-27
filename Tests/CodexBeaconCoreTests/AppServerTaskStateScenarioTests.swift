@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 
 @testable import CodexBeaconCore
@@ -825,6 +826,44 @@ struct AppServerTaskStateScenarioTests {
 
     #expect(coordinator.viewState.status == .idle)
     #expect(coordinator.viewState.lights[0].illumination == .off)
+  }
+
+  @Test("a missing thread read is retried after the snapshot timeout")
+  func missingThreadReadRecoversAfterSnapshotTimeout() {
+    let coordinator = AppCoordinator()
+    let initialTime = Date(timeIntervalSince1970: 1_753_353_600)
+    coordinator.handle(.time(.advanced(to: initialTime)))
+    coordinator.handle(.task(.monitoringConnectionEstablished(protocolCompatible: true)))
+    let loadedListRequest = coordinator.drainAppServerRequests().first!
+    coordinator.handle(
+      .task(.appServerMessage("""
+        {"id":\(loadedListRequest.id),"result":{"data":["unresponsive-thread"]}}
+        """))
+    )
+    let missingReadRequest = coordinator.drainAppServerRequests().first!
+    #expect(missingReadRequest.method == "thread/read")
+
+    coordinator.handle(
+      .time(.advanced(to: initialTime.addingTimeInterval(7)))
+    )
+    coordinator.handle(.task(.monitoringSnapshotRequested))
+
+    let retryRequest = coordinator.drainAppServerRequests().first!
+    #expect(retryRequest.method == "thread/loaded/list")
+    coordinator.handle(
+      .task(.appServerMessage("""
+        {"id":\(retryRequest.id),"result":{"data":["new-working-thread"]}}
+        """))
+    )
+    let replacementReadRequest = coordinator.drainAppServerRequests().first!
+    coordinator.handle(
+      .task(.appServerMessage("""
+        {"id":\(replacementReadRequest.id),"result":{"thread":{"id":"new-working-thread","source":"vscode","ephemeral":false,"parentThreadId":null,"status":{"type":"active","activeFlags":[]}}}}
+        """))
+    )
+
+    #expect(coordinator.viewState.status == .working)
+    #expect(coordinator.viewState.lights[1].illumination == .steady)
   }
 
   @Test("unrelated App Server notifications do not invalidate task evidence")

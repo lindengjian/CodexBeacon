@@ -25,9 +25,12 @@ extension AppServerRequest {
 }
 
 struct AppServerTaskMonitor {
+  private static let snapshotRequestTimeout: TimeInterval = 6
+
   private let requestIDGenerator: AppServerRequestIDGenerator
   private var requests: [AppServerRequest] = []
   private var pendingRequests: [Int: PendingRequest] = [:]
+  private var pendingSnapshotRequestTimes: [Int: Date] = [:]
   private var observedThreads: [String: ObservedThread] = [:]
   private var outstandingInitialReads: Set<String> = []
   private var snapshotThreadIDs: Set<String>?
@@ -83,7 +86,8 @@ struct AppServerTaskMonitor {
   }
 
   mutating func connectionEstablished(
-    protocolCompatible: Bool
+    protocolCompatible: Bool,
+    observedAt: Date
   ) -> BeaconStatus {
     guard protocolCompatible else {
       return fail()
@@ -92,10 +96,11 @@ struct AppServerTaskMonitor {
     state = .collectingEvidence
     requests.removeAll()
     pendingRequests.removeAll()
+    pendingSnapshotRequestTimes.removeAll()
     observedThreads.removeAll()
     outstandingInitialReads.removeAll()
     snapshotThreadIDs = nil
-    requestLoadedThreads()
+    requestLoadedThreads(observedAt: observedAt)
     return .monitoringUnavailable
   }
 
@@ -107,15 +112,19 @@ struct AppServerTaskMonitor {
     fail()
   }
 
-  mutating func snapshotRequested() -> BeaconStatus {
+  mutating func snapshotRequested(observedAt: Date) -> BeaconStatus {
     guard
-      state == .available || state == .collectingEvidence,
-      !hasPendingLoadedThreadsRead,
-      !hasPendingThreadRead
+      state == .available || state == .collectingEvidence
     else {
       return currentStatus
     }
-    requestLoadedThreads()
+    if hasPendingLoadedThreadsRead || hasPendingThreadRead {
+      guard hasTimedOutSnapshotRequest(at: observedAt) else {
+        return currentStatus
+      }
+      discardTimedOutSnapshotRequests()
+    }
+    requestLoadedThreads(observedAt: observedAt)
     return currentStatus
   }
 
@@ -144,6 +153,7 @@ struct AppServerTaskMonitor {
       guard let pendingRequest = pendingRequests.removeValue(forKey: requestID) else {
         return currentStatus
       }
+      pendingSnapshotRequestTimes.removeValue(forKey: requestID)
 
       if header.error != nil {
         switch pendingRequest {
@@ -158,7 +168,7 @@ struct AppServerTaskMonitor {
 
       switch pendingRequest {
       case .loadedThreads:
-        return try handleLoadedThreadsResponse(data)
+        return try handleLoadedThreadsResponse(data, observedAt: observedAt)
       case .thread(let threadID):
         return try handleThreadResponse(
           data,
@@ -182,22 +192,24 @@ struct AppServerTaskMonitor {
     return requests
   }
 
-  private mutating func requestLoadedThreads() {
+  private mutating func requestLoadedThreads(observedAt: Date) {
     let request = AppServerRequest(
       id: requestIDGenerator.next(),
       method: .loadedThreads
     )
     pendingRequests[request.id] = .loadedThreads
+    pendingSnapshotRequestTimes[request.id] = observedAt
     requests.append(request)
   }
 
-  private mutating func requestThread(_ threadID: String) {
+  private mutating func requestThread(_ threadID: String, observedAt: Date) {
     let request = AppServerRequest(
       id: requestIDGenerator.next(),
       method: .readThread,
       threadID: threadID
     )
     pendingRequests[request.id] = .thread(threadID)
+    pendingSnapshotRequestTimes[request.id] = observedAt
     requests.append(request)
   }
 
@@ -212,7 +224,8 @@ struct AppServerTaskMonitor {
   }
 
   private mutating func handleLoadedThreadsResponse(
-    _ data: Data
+    _ data: Data,
+    observedAt: Date
   ) throws -> BeaconStatus {
     let response = try JSONDecoder().decode(
       LoadedThreadsResponse.self,
@@ -229,7 +242,7 @@ struct AppServerTaskMonitor {
     }
 
     for threadID in threadIDs {
-      requestThread(threadID)
+      requestThread(threadID, observedAt: observedAt)
     }
     return currentStatus
   }
@@ -349,7 +362,7 @@ struct AppServerTaskMonitor {
         return currentStatus
       }
       if !hasPendingRead(for: threadID) {
-        requestThread(threadID)
+          requestThread(threadID, observedAt: observedAt)
       }
       return currentStatus
     }
@@ -357,7 +370,7 @@ struct AppServerTaskMonitor {
     guard let previousThread else {
       state = .collectingEvidence
       if !hasPendingRead(for: threadID) {
-        requestThread(threadID)
+        requestThread(threadID, observedAt: observedAt)
       }
       return .monitoringUnavailable
     }
@@ -462,6 +475,7 @@ struct AppServerTaskMonitor {
     state = .unavailable
     requests.removeAll()
     pendingRequests.removeAll()
+    pendingSnapshotRequestTimes.removeAll()
     outstandingInitialReads.removeAll()
     snapshotThreadIDs = nil
     return .monitoringUnavailable
@@ -473,6 +487,21 @@ struct AppServerTaskMonitor {
     }
     observedThreads = observedThreads.filter { snapshotThreadIDs.contains($0.key) }
     self.snapshotThreadIDs = nil
+  }
+
+  private func hasTimedOutSnapshotRequest(at observedAt: Date) -> Bool {
+    pendingSnapshotRequestTimes.values.contains {
+      observedAt.timeIntervalSince($0) >= Self.snapshotRequestTimeout
+    }
+  }
+
+  private mutating func discardTimedOutSnapshotRequests() {
+    for requestID in pendingSnapshotRequestTimes.keys {
+      pendingRequests.removeValue(forKey: requestID)
+    }
+    pendingSnapshotRequestTimes.removeAll()
+    outstandingInitialReads.removeAll()
+    snapshotThreadIDs = nil
   }
 
   private func updatedThread(

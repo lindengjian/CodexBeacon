@@ -54,7 +54,10 @@ public final class AppCoordinator {
     case .task(.monitoringConnectionEstablished(let protocolCompatible)):
       sharedRuntimeValidated = !requiresSharedRuntimeEvidence
       presentTaskStatus(
-        taskMonitor.connectionEstablished(protocolCompatible: protocolCompatible)
+        taskMonitor.connectionEstablished(
+          protocolCompatible: protocolCompatible,
+          observedAt: observationTime
+        )
       )
       quotaMonitor.connectionEstablished()
     case .task(.monitoringRuntimeValidated):
@@ -72,7 +75,7 @@ public final class AppCoordinator {
     case .task(.monitoringSnapshotRequested):
       presentTaskStatus(
         sharedRuntimeValidated
-          ? taskMonitor.snapshotRequested()
+          ? taskMonitor.snapshotRequested(observedAt: observationTime)
           : .monitoringUnavailable
       )
     case .task(.quotaSnapshotRequested):
