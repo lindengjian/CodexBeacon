@@ -281,6 +281,12 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
   }
 
   private func showSettings() {
+    if let settingsWindowController {
+      settingsWindowController.present()
+      NSApp.activate(ignoringOtherApps: true)
+      return
+    }
+
     let rootView = BeaconSettingsView(
       size: preferences.size,
       hotKey: preferences.hotKey,
@@ -294,7 +300,7 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
     )
     let controller = BeaconSettingsWindowController(rootView: rootView)
     settingsWindowController = controller
-    controller.showWindow(nil)
+    controller.present()
     NSApp.activate(ignoringOtherApps: true)
   }
 

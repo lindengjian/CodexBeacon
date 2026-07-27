@@ -15,11 +15,17 @@ final class BeaconSettingsWindowController: NSWindowController {
     window.title = "Beacon 设置"
     window.isReleasedWhenClosed = false
     window.contentView = NSHostingView(rootView: rootView)
+    window.center()
     super.init(window: window)
   }
 
   required init?(coder: NSCoder) {
     fatalError("init(coder:) has not been implemented")
+  }
+
+  func present() {
+    showWindow(nil)
+    window?.makeKeyAndOrderFront(nil)
   }
 }
 
@@ -45,29 +51,34 @@ struct BeaconSettingsView: View {
   }
 
   var body: some View {
-    Form {
-      Picker("Beacon 尺寸", selection: Binding(
-        get: { model.size },
-        set: { newSize in model.selectSize(newSize) }
-      )) {
-        Text("标准（62 × 229 pt）").tag(BeaconSize.standard)
-        Text("紧凑（24 × 88 pt）").tag(BeaconSize.compact)
+    VStack(alignment: .leading, spacing: 18) {
+      VStack(alignment: .leading, spacing: 8) {
+        Text("Beacon 尺寸")
+        Picker("Beacon 尺寸", selection: Binding(
+          get: { model.size },
+          set: { newSize in model.selectSize(newSize) }
+        )) {
+          Text("标准（62 × 229 pt）").tag(BeaconSize.standard)
+          Text("紧凑（24 × 88 pt）").tag(BeaconSize.compact)
+        }
+        .labelsHidden()
+        .pickerStyle(.menu)
+        .frame(width: 220, alignment: .leading)
       }
 
-      HStack(alignment: .firstTextBaseline) {
+      VStack(alignment: .leading, spacing: 8) {
         Text("全局显示/隐藏")
-        Spacer()
         HotKeyRecorder(
           hotKey: $model.hotKey,
           errorMessage: $model.hotKeyError,
           onHotKeySelected: model.recordHotKey
         )
         .frame(width: 158, height: 28)
-      }
 
-      Text("点击快捷键，然后按下包含 ⌘、⌥、⌃ 或 ⇧ 的组合键。")
-        .font(.caption)
-        .foregroundStyle(.secondary)
+        Text("点击快捷键，然后按下包含 ⌘、⌥、⌃ 或 ⇧ 的组合键。")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
 
       if let hotKeyError = model.hotKeyError {
         Text(hotKeyError)
@@ -76,7 +87,7 @@ struct BeaconSettingsView: View {
       }
     }
     .padding(20)
-    .frame(width: 390, height: 230)
+    .frame(width: 390, height: 230, alignment: .topLeading)
   }
 }
 
