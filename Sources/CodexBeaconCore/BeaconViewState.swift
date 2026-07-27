@@ -4,9 +4,18 @@ public enum BeaconSize: Equatable, Sendable {
   case standard
 
   public var dimensions: BeaconDimensions {
+    dimensions(for: .vertical)
+  }
+
+  public func dimensions(for orientation: BeaconOrientation) -> BeaconDimensions {
     switch self {
     case .standard:
-      BeaconDimensions(width: 62, height: 229)
+      switch orientation {
+      case .vertical:
+        BeaconDimensions(width: 62, height: 229)
+      case .horizontal:
+        BeaconDimensions(width: 229, height: 62)
+      }
     }
   }
 }
@@ -99,6 +108,7 @@ public struct QuotaTrackState: Equatable, Sendable {
 public struct BeaconViewState: Equatable, Sendable {
   public var isVisible: Bool
   public let size: BeaconSize
+  public var orientation: BeaconOrientation
   public let surface: BeaconSurfaceState
   public private(set) var lights: [BeaconLightState]
   public let quotaTrack: QuotaTrackState
@@ -108,9 +118,14 @@ public struct BeaconViewState: Equatable, Sendable {
   public private(set) var waitingTasks: [WaitingTask]
   public private(set) var unconfirmedCompletionTaskIDs: Set<String>
 
+  public var dimensions: BeaconDimensions {
+    size.dimensions(for: orientation)
+  }
+
   public init(
     isVisible: Bool,
     size: BeaconSize,
+    orientation: BeaconOrientation = .vertical,
     surface: BeaconSurfaceState,
     lights: [BeaconLightState],
     quotaTrack: QuotaTrackState,
@@ -122,6 +137,7 @@ public struct BeaconViewState: Equatable, Sendable {
   ) {
     self.isVisible = isVisible
     self.size = size
+    self.orientation = orientation
     self.surface = surface
     self.lights = lights
     self.quotaTrack = quotaTrack

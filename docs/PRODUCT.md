@@ -112,6 +112,25 @@ The quota gauge is a neutral thin rail along the long edge of the body. Precise 
 - If a display disconnects, the Beacon moves to the corresponding edge of the primary display.
 - Reconnecting that display does not move the Beacon back automatically.
 
+### Repeatable Window Acceptance
+
+Build the application with `./scripts/build-app.sh`, launch
+`.build/CodexBeacon.app`, and perform this matrix on macOS 15 or newer. Record
+the macOS version, display arrangement, Dock setting, and result for each row.
+
+| Scenario | Steps | Expected result |
+| --- | --- | --- |
+| All Spaces | Put Beacon at each of the four edges, then switch through at least two Spaces. | Beacon remains visible and retains its selected edge. |
+| Full-screen app | Put a different app into a native full-screen Space, then switch to it. | Beacon remains visible above the app. |
+| Edge orientation | Drag Beacon near each edge and release. | Left/right are vertical; top/bottom are horizontal; the nearest edge wins. |
+| Safe areas | Repeat the four-edge drag on a display with a menu bar, notch if present, and a permanently visible Dock. | Beacon stays in the visible safe area and does not overlap those areas. |
+| Auto-hidden Dock | Set the Dock to automatically hide, drag Beacon to the Dock edge, and release. | Beacon can occupy that edge without a permanent Dock-sized gap. |
+| Disconnect migration | Place Beacon on an external display, disconnect it, then reconnect it. | It moves to the corresponding primary-display edge when disconnected and remains there after reconnecting. |
+
+The implementation uses AppKit's named `.floating` window level and public
+`.canJoinAllSpaces` and `.canJoinAllApplications` collection behaviors. No
+numeric window level is used.
+
 ## Hover Details And Privacy
 
 Hover reveals:

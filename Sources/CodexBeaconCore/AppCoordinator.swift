@@ -4,6 +4,7 @@ public enum BeaconEffect: Equatable, Sendable {
   case showBeacon
   case hideBeacon
   case activateCodex(threadID: String?)
+  case placeBeacon(BeaconPlacement)
 }
 
 @MainActor
@@ -16,10 +17,16 @@ public final class AppCoordinator {
   private var sharedRuntimeValidated: Bool
   private var hasStarted = false
   private var observationTime = Date()
+  private var displayLayout: BeaconDisplayLayout?
+  private var beaconAnchor: BeaconAnchor?
 
-  public init(requiresSharedRuntimeEvidence: Bool = false) {
+  public init(
+    requiresSharedRuntimeEvidence: Bool = false,
+    initialBeaconAnchor: BeaconAnchor? = nil
+  ) {
     self.requiresSharedRuntimeEvidence = requiresSharedRuntimeEvidence
     sharedRuntimeValidated = !requiresSharedRuntimeEvidence
+    beaconAnchor = initialBeaconAnchor
   }
 
   public func start() {
@@ -62,6 +69,8 @@ public final class AppCoordinator {
 
       viewState.isVisible = isVisible
       effects.append(isVisible ? .showBeacon : .hideBeacon)
+    case .system(.displayLayoutChanged(let layout)):
+      updateBeaconPlacement(for: layout)
     case .user(.beaconActivated):
       let waitingThreadID = taskMonitor.waitingTasks.first?.threadID
       taskMonitor.confirmCompletions()
@@ -69,6 +78,13 @@ public final class AppCoordinator {
         sharedRuntimeValidated ? taskMonitor.status : .monitoringUnavailable
       )
       effects.append(.activateCodex(threadID: waitingThreadID))
+    case .user(.beaconDragEnded(let displayIdentifier, let frame)):
+      guard let display = displayLayout?.display(identifier: displayIdentifier) else {
+        return
+      }
+
+      beaconAnchor = BeaconPlacementResolver.anchor(forDraggedFrame: frame, on: display)
+      presentBeaconPlacement(on: display)
     }
   }
 
@@ -87,5 +103,36 @@ public final class AppCoordinator {
       waitingTasks: taskMonitor.waitingTasks,
       unconfirmedCompletionTaskIDs: taskMonitor.unconfirmedCompletionTaskIDs
     )
+  }
+
+  private func updateBeaconPlacement(for layout: BeaconDisplayLayout) {
+    displayLayout = layout
+    guard let primaryDisplay = layout.display(identifier: layout.primaryDisplayIdentifier) else {
+      return
+    }
+
+    let anchor = beaconAnchor ?? BeaconPlacementResolver.defaultAnchor(in: primaryDisplay)
+    let destination = layout.display(identifier: anchor.displayIdentifier) ?? primaryDisplay
+    let shouldMigrate = destination.identifier != anchor.displayIdentifier
+    beaconAnchor = shouldMigrate
+      ? BeaconAnchor(
+        displayIdentifier: destination.identifier,
+        edge: anchor.edge,
+        alongEdgeOffset: anchor.alongEdgeOffset
+      )
+      : anchor
+
+    presentBeaconPlacement(on: destination)
+  }
+
+  private func presentBeaconPlacement(on display: BeaconDisplay) {
+    guard let beaconAnchor else {
+      return
+    }
+
+    let placement = BeaconPlacementResolver.placement(for: beaconAnchor, on: display)
+    self.beaconAnchor = placement.anchor
+    viewState.orientation = placement.anchor.edge.orientation
+    effects.append(.placeBeacon(placement))
   }
 }

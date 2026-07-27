@@ -9,26 +9,33 @@ struct IdleBeaconView: View {
     ZStack {
       BeaconSurface(surface: state.surface)
         .frame(
-          width: state.size.dimensions.width,
-          height: state.size.dimensions.height
+          width: state.dimensions.width,
+          height: state.dimensions.height
         )
 
-      VStack(spacing: 15) {
-        ForEach(Array(state.lights.enumerated()), id: \.offset) { _, light in
-          LightRecess(light: light)
+      if state.orientation == .vertical {
+        VStack(spacing: 15) {
+          lamps
+          Spacer(minLength: 4)
+          QuotaTrack(state: state.quotaTrack, orientation: .vertical)
         }
-
-        Spacer(minLength: 4)
-
-        QuotaTrack(state: state.quotaTrack)
+        .padding(.horizontal, 13)
+        .padding(.top, 22)
+        .padding(.bottom, 19)
+      } else {
+        HStack(spacing: 15) {
+          lamps
+          Spacer(minLength: 4)
+          QuotaTrack(state: state.quotaTrack, orientation: .horizontal)
+        }
+        .padding(.vertical, 13)
+        .padding(.leading, 19)
+        .padding(.trailing, 22)
       }
-      .padding(.horizontal, 13)
-      .padding(.top, 22)
-      .padding(.bottom, 19)
     }
     .frame(
-      width: state.size.dimensions.width,
-      height: state.size.dimensions.height
+      width: state.dimensions.width,
+      height: state.dimensions.height
     )
     .transaction { transaction in
       if state.reducesMotion {
@@ -39,6 +46,13 @@ struct IdleBeaconView: View {
     .accessibilityLabel("Codex Beacon")
     .accessibilityValue(accessibilityValue)
     .onTapGesture(perform: onActivate)
+  }
+
+  @ViewBuilder
+  private var lamps: some View {
+    ForEach(Array(state.lights.enumerated()), id: \.offset) { _, light in
+      LightRecess(light: light)
+    }
   }
 
   private var accessibilityValue: String {
@@ -133,6 +147,7 @@ private struct LightRecess: View {
 
 private struct QuotaTrack: View {
   let state: QuotaTrackState
+  let orientation: BeaconOrientation
 
   var body: some View {
     Capsule()
@@ -141,7 +156,10 @@ private struct QuotaTrack: View {
         Capsule()
           .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
       }
-      .frame(width: 8, height: 52)
+      .frame(
+        width: orientation == .vertical ? 8 : 52,
+        height: orientation == .vertical ? 52 : 8
+      )
   }
 
   private var trackColor: Color {

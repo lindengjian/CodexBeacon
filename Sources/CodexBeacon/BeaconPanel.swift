@@ -7,8 +7,15 @@ final class BeaconPanel: NSPanel {
   override var canBecomeKey: Bool { false }
   override var canBecomeMain: Bool { false }
 
-  init(state: BeaconViewState, onActivate: @escaping () -> Void) {
-    let dimensions = state.size.dimensions
+  private let onDragEnded: () -> Void
+
+  init(
+    state: BeaconViewState,
+    onActivate: @escaping () -> Void,
+    onDragEnded: @escaping () -> Void
+  ) {
+    self.onDragEnded = onDragEnded
+    let dimensions = state.dimensions
     let contentRect = NSRect(
       x: 0,
       y: 0,
@@ -24,7 +31,11 @@ final class BeaconPanel: NSPanel {
     )
 
     level = .floating
-    collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+    collectionBehavior = [
+      .canJoinAllSpaces,
+      .canJoinAllApplications,
+      .stationary,
+    ]
     isFloatingPanel = true
     hidesOnDeactivate = false
     becomesKeyOnlyIfNeeded = true
@@ -37,5 +48,20 @@ final class BeaconPanel: NSPanel {
     contentView = NSHostingView(
       rootView: IdleBeaconView(state: state, onActivate: onActivate)
     )
+  }
+
+  override func mouseUp(with event: NSEvent) {
+    super.mouseUp(with: event)
+    onDragEnded()
+  }
+
+  func apply(_ placement: BeaconPlacement) {
+    let frame = NSRect(
+      x: placement.frame.x,
+      y: placement.frame.y,
+      width: placement.frame.width,
+      height: placement.frame.height
+    )
+    setFrame(frame, display: true)
   }
 }
