@@ -31,6 +31,29 @@ struct AccountQuotaScenarioTests {
     #expect(refreshRequests.first?.id != initialQuotaRequest?.id)
   }
 
+  @Test("task and quota requests share one collision-free ID sequence")
+  func taskAndQuotaRequestsUseDistinctIDs() {
+    let coordinator = AppCoordinator()
+
+    coordinator.handle(.task(.monitoringConnectionEstablished(protocolCompatible: true)))
+    let initialRequests = coordinator.drainAppServerRequests()
+    let taskRequest = initialRequests.first { $0.method == "thread/loaded/list" }!
+    let quotaRequest = initialRequests.first { $0.method == "account/rateLimits/read" }!
+
+    #expect(taskRequest.id != quotaRequest.id)
+
+    coordinator.handle(
+      .task(.appServerMessage("""
+        {"id":\(taskRequest.id),"result":{"data":[]}}
+        """))
+    )
+    coordinator.handle(.task(.monitoringSnapshotRequested))
+    coordinator.handle(.task(.quotaSnapshotRequested))
+    let refreshRequests = coordinator.drainAppServerRequests()
+
+    #expect(Set(initialRequests.map(\.id) + refreshRequests.map(\.id)).count == 4)
+  }
+
   @Test("a late quota snapshot does not overwrite a newer periodic snapshot")
   func lateQuotaSnapshotDoesNotOverwriteNewerPeriodicSnapshot() {
     let coordinator = AppCoordinator()

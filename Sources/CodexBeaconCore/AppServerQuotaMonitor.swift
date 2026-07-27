@@ -1,11 +1,15 @@
 import Foundation
 
 struct AppServerQuotaMonitor {
+  private let requestIDGenerator: AppServerRequestIDGenerator
   private var windows: [String: QuotaWindow] = [:]
   private var state: QuotaMonitorState = .notStarted
-  private var nextRequestID = 1000
   private var pendingSnapshotRequestID: Int?
   private var requests: [AppServerRequest] = []
+
+  init(requestIDGenerator: AppServerRequestIDGenerator) {
+    self.requestIDGenerator = requestIDGenerator
+  }
 
   var accountQuota: AccountQuotaState {
     guard state == .available else {
@@ -87,8 +91,8 @@ struct AppServerQuotaMonitor {
   }
 
   private mutating func requestSnapshot() {
-    let request = AppServerRequest(id: nextRequestID, method: QuotaMethod.readRateLimits)
-    nextRequestID += 1
+    let request = AppServerRequest(
+      id: requestIDGenerator.next(), method: QuotaMethod.readRateLimits)
     pendingSnapshotRequestID = request.id
     requests.append(request)
   }

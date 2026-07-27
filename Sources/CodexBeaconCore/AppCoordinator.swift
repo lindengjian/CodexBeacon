@@ -12,8 +12,9 @@ public final class AppCoordinator {
   public private(set) var viewState = BeaconViewState.idle
 
   private var effects: [BeaconEffect] = []
-  private var taskMonitor = AppServerTaskMonitor()
-  private var quotaMonitor = AppServerQuotaMonitor()
+  private let requestIDGenerator: AppServerRequestIDGenerator
+  private var taskMonitor: AppServerTaskMonitor
+  private var quotaMonitor: AppServerQuotaMonitor
   private let requiresSharedRuntimeEvidence: Bool
   private var sharedRuntimeValidated: Bool
   private var hasStarted = false
@@ -28,6 +29,10 @@ public final class AppCoordinator {
     initialBeaconAnchor: BeaconAnchor? = nil,
     initialBeaconSize: BeaconSize = .standard
   ) {
+    let requestIDGenerator = AppServerRequestIDGenerator()
+    self.requestIDGenerator = requestIDGenerator
+    taskMonitor = AppServerTaskMonitor(requestIDGenerator: requestIDGenerator)
+    quotaMonitor = AppServerQuotaMonitor(requestIDGenerator: requestIDGenerator)
     self.requiresSharedRuntimeEvidence = requiresSharedRuntimeEvidence
     sharedRuntimeValidated = !requiresSharedRuntimeEvidence
     beaconAnchor = initialBeaconAnchor

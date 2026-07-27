@@ -25,6 +25,7 @@ extension AppServerRequest {
 }
 
 struct AppServerTaskMonitor {
+  private let requestIDGenerator: AppServerRequestIDGenerator
   private var requests: [AppServerRequest] = []
   private var pendingRequests: [Int: PendingRequest] = [:]
   private var observedThreads: [String: ObservedThread] = [:]
@@ -32,7 +33,9 @@ struct AppServerTaskMonitor {
   private var snapshotThreadIDs: Set<String>?
   private var completedTaskIDs: Set<String> = []
   private var state = MonitoringState.notStarted
-  private var nextRequestID = 1
+  init(requestIDGenerator: AppServerRequestIDGenerator) {
+    self.requestIDGenerator = requestIDGenerator
+  }
 
   var waitingTasks: [WaitingTask] {
     observedThreads.values.compactMap { thread in
@@ -181,32 +184,29 @@ struct AppServerTaskMonitor {
 
   private mutating func requestLoadedThreads() {
     let request = AppServerRequest(
-      id: nextRequestID,
+      id: requestIDGenerator.next(),
       method: .loadedThreads
     )
-    nextRequestID += 1
     pendingRequests[request.id] = .loadedThreads
     requests.append(request)
   }
 
   private mutating func requestThread(_ threadID: String) {
     let request = AppServerRequest(
-      id: nextRequestID,
+      id: requestIDGenerator.next(),
       method: .readThread,
       threadID: threadID
     )
-    nextRequestID += 1
     pendingRequests[request.id] = .thread(threadID)
     requests.append(request)
   }
 
   private mutating func requestLatestTurn(_ threadID: String) {
     let request = AppServerRequest(
-      id: nextRequestID,
+      id: requestIDGenerator.next(),
       method: .listTurns,
       threadID: threadID
     )
-    nextRequestID += 1
     pendingRequests[request.id] = .latestTurn(threadID)
     requests.append(request)
   }
