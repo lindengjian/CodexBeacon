@@ -24,6 +24,9 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
   private var reconnectBackoff = MonitoringReconnectBackoff()
   private var retryWorkItem: DispatchWorkItem?
   private var snapshotTimer: DispatchSourceTimer?
+  private var quotaRefreshTimer: DispatchSourceTimer?
+  private var quotaRefreshInterval = QuotaRefreshSchedule.interval(for: .idle)
+  private var canRefreshQuota = false
   private var connectionAttemptInFlight = false
   private var connectionGeneration = 0
   private var isStopped = false
@@ -53,6 +56,9 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
     retryWorkItem = nil
     snapshotTimer?.cancel()
     snapshotTimer = nil
+    quotaRefreshTimer?.cancel()
+    quotaRefreshTimer = nil
+    canRefreshQuota = false
     connectionAttemptInFlight = false
     connectionGeneration += 1
     client?.close()
@@ -145,6 +151,8 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
       }
       didInitialize = true
       client?.send(["method": "initialized"])
+      canRefreshQuota = true
+      startQuotaRefreshTimer()
       dispatch(
         [.monitoringConnectionEstablished(protocolCompatible: true)],
         flushesRequests: true
@@ -224,6 +232,9 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
     client = nil
     snapshotTimer?.cancel()
     snapshotTimer = nil
+    quotaRefreshTimer?.cancel()
+    quotaRefreshTimer = nil
+    canRefreshQuota = false
     didInitialize = false
     sawSharedDesktopRuntime = false
     dispatch([.monitoringConnectionFailed])
@@ -262,6 +273,40 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
     }
     snapshotTimer = timer
     timer.resume()
+  }
+
+  private func startQuotaRefreshTimer() {
+    guard quotaRefreshTimer == nil, canRefreshQuota, !isStopped else {
+      return
+    }
+    let timer = DispatchSource.makeTimerSource(queue: .main)
+    timer.schedule(
+      deadline: .now() + quotaRefreshInterval,
+      repeating: quotaRefreshInterval,
+      leeway: .milliseconds(500)
+    )
+    timer.setEventHandler { [weak self] in
+      guard let self, !self.isStopped else {
+        return
+      }
+      self.dispatch([.quotaSnapshotRequested], flushesRequests: true)
+    }
+    quotaRefreshTimer = timer
+    timer.resume()
+  }
+
+  func updateQuotaRefreshInterval(for status: BeaconStatus) {
+    let interval = QuotaRefreshSchedule.interval(for: status)
+    guard quotaRefreshInterval != interval else {
+      return
+    }
+    quotaRefreshInterval = interval
+    guard canRefreshQuota else {
+      return
+    }
+    quotaRefreshTimer?.cancel()
+    quotaRefreshTimer = nil
+    startQuotaRefreshTimer()
   }
 
   private func dispatch(_ events: [TaskEvent], flushesRequests: Bool = false) {

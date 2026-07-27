@@ -9,6 +9,51 @@ struct AccountQuotaScenarioTests {
 
   // MARK: - Snapshot and sparse updates
 
+  @Test("quota refresh interval follows Codex aggregate status")
+  func quotaRefreshIntervalFollowsCodexAggregateStatus() {
+    #expect(QuotaRefreshSchedule.interval(for: .working) == 5)
+    #expect(QuotaRefreshSchedule.interval(for: .idle) == 30)
+    #expect(QuotaRefreshSchedule.interval(for: .completed) == 30)
+  }
+
+  @Test("a periodic quota refresh requests a new snapshot while a prior request is pending")
+  func periodicQuotaRefreshRequestsNewSnapshotWhilePriorRequestIsPending() {
+    let coordinator = AppCoordinator()
+
+    coordinator.handle(.task(.monitoringConnectionEstablished(protocolCompatible: true)))
+    let initialQuotaRequest = coordinator.drainAppServerRequests().last
+    #expect(initialQuotaRequest?.method == "account/rateLimits/read")
+
+    coordinator.handle(.task(.quotaSnapshotRequested))
+
+    let refreshRequests = coordinator.drainAppServerRequests()
+    #expect(refreshRequests.map(\.method) == ["account/rateLimits/read"])
+    #expect(refreshRequests.first?.id != initialQuotaRequest?.id)
+  }
+
+  @Test("a late quota snapshot does not overwrite a newer periodic snapshot")
+  func lateQuotaSnapshotDoesNotOverwriteNewerPeriodicSnapshot() {
+    let coordinator = AppCoordinator()
+
+    coordinator.handle(.task(.monitoringConnectionEstablished(protocolCompatible: true)))
+    let initialQuotaRequest = coordinator.drainAppServerRequests().last!
+    coordinator.handle(.task(.quotaSnapshotRequested))
+    let refreshQuotaRequest = coordinator.drainAppServerRequests().first!
+
+    coordinator.handle(
+      .task(.appServerMessage("""
+        {"id":\(refreshQuotaRequest.id),"result":{"rateLimits":{"5h":{"durationSeconds":18000,"usedPercent":60}}}}
+        """))
+    )
+    coordinator.handle(
+      .task(.appServerMessage("""
+        {"id":\(initialQuotaRequest.id),"result":{"rateLimits":{"5h":{"durationSeconds":18000,"usedPercent":10}}}}
+        """))
+    )
+
+    #expect(abs(coordinator.viewState.quotaTrack.fillFraction - 0.4) < 0.01)
+  }
+
   @Test("full snapshot on connection populates all quota windows")
   func fullSnapshotPopulatesAllWindows() {
     let coordinator = AppCoordinator()

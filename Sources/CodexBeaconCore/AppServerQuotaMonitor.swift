@@ -46,6 +46,13 @@ struct AppServerQuotaMonitor {
     connectionFailed()
   }
 
+  mutating func snapshotRequested() {
+    guard state != .notStarted, state != .unavailable else {
+      return
+    }
+    requestSnapshot()
+  }
+
   /// Returns `true` when the message is a quota-related message and was handled.
   mutating func handle(message: String, observedAt: Date) -> Bool {
     guard state != .notStarted, state != .unavailable else {

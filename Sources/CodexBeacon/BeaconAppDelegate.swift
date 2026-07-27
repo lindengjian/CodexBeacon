@@ -81,6 +81,7 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
   private func handleTaskEvent(_ event: TaskEvent) {
     coordinator.handle(.time(.advanced(to: Date())))
     coordinator.handle(.task(event))
+    taskMonitor?.updateQuotaRefreshInterval(for: coordinator.viewState.status)
     updatePanelContent()
   }
 

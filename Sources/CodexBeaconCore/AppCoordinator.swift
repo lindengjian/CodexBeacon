@@ -70,6 +70,8 @@ public final class AppCoordinator {
           ? taskMonitor.snapshotRequested()
           : .monitoringUnavailable
       )
+    case .task(.quotaSnapshotRequested):
+      quotaMonitor.snapshotRequested()
     case .task(.appServerMessage(let message)):
       let completionsBefore = taskMonitor.unconfirmedCompletionTaskIDs
       let quotaHandled = quotaMonitor.handle(
