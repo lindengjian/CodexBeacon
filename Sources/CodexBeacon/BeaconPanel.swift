@@ -18,6 +18,7 @@ final class BeaconPanel: NSPanel {
 
   private let onDragEnded: () -> Void
   private let stateStore: BeaconViewStateStore
+  private var frameBeforePointerDown: NSRect?
   var onRightClick: ((NSEvent) -> Void)?
 
   init(
@@ -62,13 +63,25 @@ final class BeaconPanel: NSPanel {
     )
   }
 
-  override func mouseUp(with event: NSEvent) {
-    super.mouseUp(with: event)
-    onDragEnded()
-  }
-
   override func rightMouseDown(with event: NSEvent) {
     onRightClick?(event)
+  }
+
+  override func sendEvent(_ event: NSEvent) {
+    switch event.type {
+    case .leftMouseDown:
+      frameBeforePointerDown = frame
+      super.sendEvent(event)
+    case .leftMouseUp:
+      let frameBeforeDrag = frameBeforePointerDown
+      frameBeforePointerDown = nil
+      super.sendEvent(event)
+      if let frameBeforeDrag, frameBeforeDrag.origin != frame.origin {
+        onDragEnded()
+      }
+    default:
+      super.sendEvent(event)
+    }
   }
 
   func apply(_ placement: BeaconPlacement) {
