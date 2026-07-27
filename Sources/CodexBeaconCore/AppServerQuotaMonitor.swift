@@ -5,7 +5,6 @@ struct AppServerQuotaMonitor {
   private var windows: [String: QuotaWindow] = [:]
   private var state: QuotaMonitorState = .notStarted
   private var pendingSnapshotRequestID: Int?
-  private var lastSuccessfulSnapshotAt: Date?
   private var requests: [AppServerRequest] = []
 
   init(requestIDGenerator: AppServerRequestIDGenerator) {
@@ -36,7 +35,6 @@ struct AppServerQuotaMonitor {
     state = .waitingForSnapshot
     windows.removeAll()
     pendingSnapshotRequestID = nil
-    lastSuccessfulSnapshotAt = nil
     requests.removeAll()
     requestSnapshot()
   }
@@ -45,7 +43,6 @@ struct AppServerQuotaMonitor {
     state = .unavailable
     windows.removeAll()
     pendingSnapshotRequestID = nil
-    lastSuccessfulSnapshotAt = nil
     requests.removeAll()
   }
 
@@ -58,23 +55,6 @@ struct AppServerQuotaMonitor {
       return
     }
     requestSnapshot()
-  }
-
-  /// Keeps stale quota data from being displayed as a current account balance.
-  /// A later successful snapshot restores availability automatically.
-  mutating func snapshotBecameStale(
-    at observedAt: Date,
-    after maximumAge: TimeInterval
-  ) -> Bool {
-    guard
-      state == .available,
-      let lastSuccessfulSnapshotAt,
-      observedAt.timeIntervalSince(lastSuccessfulSnapshotAt) >= maximumAge
-    else {
-      return false
-    }
-    state = .stale
-    return true
   }
 
   /// Returns `true` when the message is a quota-related message and was handled.
@@ -99,7 +79,7 @@ struct AppServerQuotaMonitor {
     if let requestID = header.id, requestID == pendingSnapshotRequestID {
       pendingSnapshotRequestID = nil
       let updated = handleRateLimitsSnapshot(data, observedAt: observedAt)
-      if !updated, lastSuccessfulSnapshotAt == nil {
+      if !updated, windows.isEmpty {
         state = .waitingForSnapshot
       }
       return true
@@ -129,7 +109,6 @@ struct AppServerQuotaMonitor {
       windows[key] = window(from: entry, key: key, previous: nil)
     }
     state = .available
-    lastSuccessfulSnapshotAt = observedAt
     return true
   }
 
@@ -146,7 +125,6 @@ struct AppServerQuotaMonitor {
       windows[key] = window(from: entry, key: key, previous: previous[key])
     }
     state = .available
-    lastSuccessfulSnapshotAt = observedAt
     return true
   }
 
@@ -174,7 +152,6 @@ private enum QuotaMonitorState {
   case notStarted
   case waitingForSnapshot
   case available
-  case stale
   case unavailable
 }
 

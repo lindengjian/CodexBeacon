@@ -32,6 +32,7 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
     self.dispatch([.quotaSnapshotRequested], flushesRequests: true)
   }
   private var quotaRefreshRequests: [Int: Date] = [:]
+  private var consecutiveQuotaRefreshFailures = 0
   private var canRefreshQuota = false
   private var connectionAttemptInFlight = false
   private var connectionGeneration = 0
@@ -64,6 +65,7 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
     snapshotTimer = nil
     quotaRefreshTimer.stop()
     quotaRefreshRequests.removeAll()
+    consecutiveQuotaRefreshFailures = 0
     canRefreshQuota = false
     connectionAttemptInFlight = false
     connectionGeneration += 1
@@ -341,6 +343,7 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
     snapshotTimer = nil
     quotaRefreshTimer.stop()
     quotaRefreshRequests.removeAll()
+    consecutiveQuotaRefreshFailures = 0
     canRefreshQuota = false
     didInitialize = false
     sawSharedDesktopRuntime = false
@@ -403,8 +406,15 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
 
   private func recordQuotaRefreshRequest(_ requestID: Int) {
     let now = Date()
-    quotaRefreshRequests = quotaRefreshRequests.filter {
-      now.timeIntervalSince($0.value) < 60
+    let timedOutRequestIDs = quotaRefreshRequests.compactMap { requestID, sentAt in
+      now.timeIntervalSince(sentAt) >= 60 ? requestID : nil
+    }
+    for timedOutRequestID in timedOutRequestIDs {
+      quotaRefreshRequests.removeValue(forKey: timedOutRequestID)
+      recordQuotaRefreshFailure(
+        requestID: timedOutRequestID,
+        reason: "response_timeout_after_60_seconds"
+      )
     }
     quotaRefreshRequests[requestID] = now
     Logger(subsystem: "com.codexbeacon", category: "quota-refresh").debug(
@@ -420,9 +430,41 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
       return
     }
     let elapsedMilliseconds = Int(Date().timeIntervalSince(sentAt) * 1_000)
-    let outcome = object["error"] == nil ? "success" : "error"
+    if let error = object["error"] as? [String: Any] {
+      let code = error["code"].map { String(describing: $0) } ?? "unknown"
+      let message = error["message"] as? String ?? "missing_error_message"
+      recordQuotaRefreshFailure(
+        requestID: requestID,
+        reason: "server_error code=\(code) message=\(message)",
+        latencyMilliseconds: elapsedMilliseconds
+      )
+      return
+    }
+    guard (object["result"] as? [String: Any])?["rateLimits"] != nil else {
+      recordQuotaRefreshFailure(
+        requestID: requestID,
+        reason: "response_missing_rate_limits",
+        latencyMilliseconds: elapsedMilliseconds
+      )
+      return
+    }
+    consecutiveQuotaRefreshFailures = 0
     Logger(subsystem: "com.codexbeacon", category: "quota-refresh").debug(
-      "[quota-refresh] received \(outcome, privacy: .public) id=\(requestID, privacy: .public) latency_ms=\(elapsedMilliseconds, privacy: .public)"
+      "[quota-refresh] received success id=\(requestID, privacy: .public) latency_ms=\(elapsedMilliseconds, privacy: .public)"
+    )
+  }
+
+  private func recordQuotaRefreshFailure(
+    requestID: Int,
+    reason: String,
+    latencyMilliseconds: Int? = nil
+  ) {
+    consecutiveQuotaRefreshFailures += 1
+    let latency = latencyMilliseconds.map { " latency_ms=\($0)" } ?? ""
+    let message = "[quota-refresh] failed attempt=\(consecutiveQuotaRefreshFailures) id=\(requestID)\(latency) reason=\(reason)"
+    diagnosticStore.record(message)
+    Logger(subsystem: "com.codexbeacon", category: "quota-refresh").error(
+      "\(message, privacy: .public)"
     )
   }
 
