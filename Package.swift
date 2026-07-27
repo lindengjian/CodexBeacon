@@ -21,5 +21,9 @@ let package = Package(
       name: "CodexBeaconCoreTests",
       dependencies: ["CodexBeaconCore"]
     ),
+    .testTarget(
+      name: "CodexBeaconTests",
+      dependencies: ["CodexBeacon", "CodexBeaconCore"]
+    ),
   ]
 )

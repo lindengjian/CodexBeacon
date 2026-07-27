@@ -8,6 +8,49 @@ struct BeaconGeometryTests {
     #expect(BeaconSize.standard.dimensions == .init(width: 62, height: 229))
   }
 
+  @Test("compact Beacon uses the specified vertical dimensions")
+  func compactBeaconDimensions() {
+    #expect(BeaconSize.compact.dimensions == .init(width: 24, height: 88))
+  }
+
+  @Test("selecting compact size keeps Beacon on its anchored edge and resolved along-edge position")
+  @MainActor
+  func selectingCompactSizeRepositionsBeacon() {
+    let coordinator = AppCoordinator()
+    let display = BeaconDisplay(
+      identifier: "built-in",
+      safeFrame: .init(x: 0, y: 24, width: 300, height: 200)
+    )
+
+    coordinator.handle(
+      .system(.displayLayoutChanged(.init(primaryDisplayIdentifier: "built-in", displays: [display])))
+    )
+    _ = coordinator.drainEffects()
+    coordinator.handle(
+      .user(
+        .beaconDragEnded(
+          displayIdentifier: "built-in",
+          frame: .init(x: 238, y: 150, width: 62, height: 229)
+        )
+      )
+    )
+    _ = coordinator.drainEffects()
+
+    coordinator.handle(.user(.beaconSizeSelected(.compact)))
+
+    #expect(coordinator.viewState.size == .compact)
+    #expect(
+      coordinator.drainEffects() == [
+        .placeBeacon(
+          .init(
+            anchor: .init(displayIdentifier: "built-in", edge: .right, alongEdgeOffset: 0),
+            frame: .init(x: 276, y: 24, width: 24, height: 88)
+          )
+        )
+      ]
+    )
+  }
+
   @Test("dragging to a display's top safe edge rotates and snaps Beacon horizontally")
   @MainActor
   func dragToTopSafeEdge() {

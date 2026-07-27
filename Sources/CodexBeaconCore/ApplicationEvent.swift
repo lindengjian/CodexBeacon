@@ -16,12 +16,14 @@ public enum TimeEvent: Equatable, Sendable {
 public enum SystemEnvironmentEvent: Equatable, Sendable {
   case reduceMotionChanged(Bool)
   case visibilityChanged(Bool)
+  case globalHotKeyPressed
   case displayLayoutChanged(BeaconDisplayLayout)
 }
 
 public enum UserEvent: Equatable, Sendable {
   case beaconActivated
   case beaconDragEnded(displayIdentifier: String, frame: BeaconRect)
+  case beaconSizeSelected(BeaconSize)
 }
 
 public enum ApplicationEvent: Equatable, Sendable {

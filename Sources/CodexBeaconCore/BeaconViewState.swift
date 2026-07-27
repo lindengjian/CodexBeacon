@@ -1,7 +1,8 @@
 import Foundation
 
-public enum BeaconSize: Equatable, Sendable {
+public enum BeaconSize: String, Codable, Equatable, Hashable, Sendable {
   case standard
+  case compact
 
   public var dimensions: BeaconDimensions {
     dimensions(for: .vertical)
@@ -15,6 +16,13 @@ public enum BeaconSize: Equatable, Sendable {
         BeaconDimensions(width: 62, height: 229)
       case .horizontal:
         BeaconDimensions(width: 229, height: 62)
+      }
+    case .compact:
+      switch orientation {
+      case .vertical:
+        BeaconDimensions(width: 24, height: 88)
+      case .horizontal:
+        BeaconDimensions(width: 88, height: 24)
       }
     }
   }
@@ -117,7 +125,7 @@ public struct QuotaTrackState: Equatable, Sendable {
 
 public struct BeaconViewState: Equatable, Sendable {
   public var isVisible: Bool
-  public let size: BeaconSize
+  public var size: BeaconSize
   public var orientation: BeaconOrientation
   public let surface: BeaconSurfaceState
   public private(set) var lights: [BeaconLightState]

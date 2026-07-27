@@ -69,6 +69,21 @@ struct VisibilityToggleScenarioTests {
     #expect(coordinator.drainEffects().isEmpty)
   }
 
+  @Test("a registered global hotkey toggles Beacon visibility through the application boundary")
+  func globalHotKeyTogglesVisibility() {
+    let coordinator = AppCoordinator()
+
+    coordinator.handle(.system(.globalHotKeyPressed))
+
+    #expect(!coordinator.viewState.isVisible)
+    #expect(coordinator.drainEffects() == [.hideBeacon])
+
+    coordinator.handle(.system(.globalHotKeyPressed))
+
+    #expect(coordinator.viewState.isVisible)
+    #expect(coordinator.drainEffects() == [.showBeacon])
+  }
+
   @Test("task events are processed and state updated while beacon is hidden")
   func taskEventsProcessedWhileHidden() {
     let coordinator = AppCoordinator()

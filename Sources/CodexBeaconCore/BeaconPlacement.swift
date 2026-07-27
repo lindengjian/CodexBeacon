@@ -88,8 +88,8 @@ public struct BeaconPlacement: Equatable, Sendable {
 }
 
 struct BeaconPlacementResolver {
-  static func defaultAnchor(in display: BeaconDisplay) -> BeaconAnchor {
-    let dimensions = BeaconSize.standard.dimensions(for: .vertical)
+  static func defaultAnchor(in display: BeaconDisplay, size: BeaconSize) -> BeaconAnchor {
+    let dimensions = size.dimensions(for: .vertical)
     return BeaconAnchor(
       displayIdentifier: display.identifier,
       edge: .right,
@@ -125,10 +125,11 @@ struct BeaconPlacementResolver {
 
   static func placement(
     for anchor: BeaconAnchor,
-    on display: BeaconDisplay
+    on display: BeaconDisplay,
+    size: BeaconSize
   ) -> BeaconPlacement {
     let orientation = anchor.edge.orientation
-    let dimensions = BeaconSize.standard.dimensions(for: orientation)
+    let dimensions = size.dimensions(for: orientation)
     let safeFrame = display.safeFrame
     let frame: BeaconRect
 

@@ -24,23 +24,23 @@ struct IdleBeaconView: View {
         )
 
       if state.orientation == .vertical {
-        VStack(spacing: 15) {
+        VStack(spacing: isCompact ? 5 : 15) {
           lamps
-          Spacer(minLength: 4)
-          QuotaTrack(state: state.quotaTrack, orientation: .vertical)
+          Spacer(minLength: isCompact ? 1 : 4)
+          QuotaTrack(state: state.quotaTrack, orientation: .vertical, size: state.size)
         }
-        .padding(.horizontal, 11)
-        .padding(.top, 22)
-        .padding(.bottom, 19)
+        .padding(.horizontal, isCompact ? 4 : 11)
+        .padding(.top, isCompact ? 8 : 22)
+        .padding(.bottom, isCompact ? 7 : 19)
       } else {
-        HStack(spacing: 15) {
+        HStack(spacing: isCompact ? 5 : 15) {
           lamps
-          Spacer(minLength: 4)
-          QuotaTrack(state: state.quotaTrack, orientation: .horizontal)
+          Spacer(minLength: isCompact ? 1 : 4)
+          QuotaTrack(state: state.quotaTrack, orientation: .horizontal, size: state.size)
         }
-        .padding(.vertical, 8)
-        .padding(.leading, 19)
-        .padding(.trailing, 22)
+        .padding(.vertical, isCompact ? 4 : 8)
+        .padding(.leading, isCompact ? 7 : 19)
+        .padding(.trailing, isCompact ? 8 : 22)
       }
     }
     .frame(
@@ -58,10 +58,14 @@ struct IdleBeaconView: View {
     .onTapGesture(perform: onActivate)
   }
 
+  private var isCompact: Bool {
+    state.size == .compact
+  }
+
   @ViewBuilder
   private var lamps: some View {
     ForEach(Array(state.lights.enumerated()), id: \.offset) { _, light in
-      LightRecess(light: light)
+      LightRecess(light: light, diameter: isCompact ? 14 : 32)
     }
   }
 
@@ -110,6 +114,7 @@ private struct BeaconSurface: View {
 
 private struct LightRecess: View {
   let light: BeaconLightState
+  let diameter: Double
 
   var body: some View {
     Circle()
@@ -117,7 +122,7 @@ private struct LightRecess: View {
       .overlay {
         Circle()
           .fill(color.opacity(illuminationOpacity))
-          .padding(3)
+          .padding(diameter > 20 ? 3 : 1.5)
       }
       .overlay {
         if light.showsRecess {
@@ -130,7 +135,7 @@ private struct LightRecess: View {
           .strokeBorder(Color.black.opacity(0.8), lineWidth: 2)
           .padding(1)
       }
-      .frame(width: 32, height: 32)
+      .frame(width: diameter, height: diameter)
       .shadow(color: .black.opacity(0.8), radius: 2, y: 1)
   }
 
@@ -158,19 +163,21 @@ private struct LightRecess: View {
 private struct QuotaTrack: View {
   let state: QuotaTrackState
   let orientation: BeaconOrientation
+  let size: BeaconSize
 
-  private var ringDiameter: Double { isVertical ? 36 : 32 }
-  private var ringLineWidth: Double { isVertical ? 5 : 4 }
+  private var isCompact: Bool { size == .compact }
+  private var ringDiameter: Double { isCompact ? 14 : (isVertical ? 36 : 32) }
+  private var ringLineWidth: Double { isCompact ? 2 : (isVertical ? 5 : 4) }
   private var isVertical: Bool { orientation == .vertical }
 
   var body: some View {
     Group {
       if state.style == .gauge, let selectedWindow {
         VStack(spacing: isVertical ? 4 : 3) {
-          if let resetText = resetText(for: selectedWindow) {
+          if !isCompact, let resetText = resetText(for: selectedWindow) {
             resetReadout(resetText)
           }
-          gaugeRing(remainingText(for: selectedWindow))
+          gaugeRing(isCompact ? nil : remainingText(for: selectedWindow))
         }
       } else {
         inactiveRing
@@ -179,7 +186,7 @@ private struct QuotaTrack: View {
     .allowsHitTesting(false)
   }
 
-  private func gaugeRing(_ percentage: String) -> some View {
+  private func gaugeRing(_ percentage: String?) -> some View {
     ZStack {
       Circle()
         .stroke(trackBackgroundColor, lineWidth: ringLineWidth)
@@ -192,10 +199,12 @@ private struct QuotaTrack: View {
         )
         .rotationEffect(.degrees(-90))
 
-      Text(percentage)
-        .font(.system(size: isVertical ? 11 : 10, weight: .semibold, design: .rounded))
-        .foregroundStyle(.white.opacity(0.84))
-        .monospacedDigit()
+      if let percentage {
+        Text(percentage)
+          .font(.system(size: isVertical ? 11 : 10, weight: .semibold, design: .rounded))
+          .foregroundStyle(.white.opacity(0.84))
+          .monospacedDigit()
+      }
     }
     .frame(width: ringDiameter, height: ringDiameter)
   }

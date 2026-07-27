@@ -25,11 +25,13 @@ public final class AppCoordinator {
 
   public init(
     requiresSharedRuntimeEvidence: Bool = false,
-    initialBeaconAnchor: BeaconAnchor? = nil
+    initialBeaconAnchor: BeaconAnchor? = nil,
+    initialBeaconSize: BeaconSize = .standard
   ) {
     self.requiresSharedRuntimeEvidence = requiresSharedRuntimeEvidence
     sharedRuntimeValidated = !requiresSharedRuntimeEvidence
     beaconAnchor = initialBeaconAnchor
+    viewState.size = initialBeaconSize
   }
 
   public func start() {
@@ -102,6 +104,9 @@ public final class AppCoordinator {
 
       viewState.isVisible = isVisible
       effects.append(isVisible ? .showBeacon : .hideBeacon)
+    case .system(.globalHotKeyPressed):
+      viewState.isVisible.toggle()
+      effects.append(viewState.isVisible ? .showBeacon : .hideBeacon)
     case .system(.displayLayoutChanged(let layout)):
       updateBeaconPlacement(for: layout)
     case .user(.beaconActivated):
@@ -129,6 +134,15 @@ public final class AppCoordinator {
 
       beaconAnchor = BeaconPlacementResolver.anchor(forDraggedFrame: frame, on: display)
       presentBeaconPlacement(on: display)
+    case .user(.beaconSizeSelected(let size)):
+      guard viewState.size != size else {
+        return
+      }
+
+      viewState.size = size
+      if let displayLayout {
+        updateBeaconPlacement(for: displayLayout)
+      }
     }
   }
 
@@ -155,7 +169,10 @@ public final class AppCoordinator {
       return
     }
 
-    let anchor = beaconAnchor ?? BeaconPlacementResolver.defaultAnchor(in: primaryDisplay)
+    let anchor = beaconAnchor ?? BeaconPlacementResolver.defaultAnchor(
+      in: primaryDisplay,
+      size: viewState.size
+    )
     let destination = layout.display(identifier: anchor.displayIdentifier) ?? primaryDisplay
     let shouldMigrate = destination.identifier != anchor.displayIdentifier
     beaconAnchor = shouldMigrate
@@ -174,7 +191,11 @@ public final class AppCoordinator {
       return
     }
 
-    let placement = BeaconPlacementResolver.placement(for: beaconAnchor, on: display)
+    let placement = BeaconPlacementResolver.placement(
+      for: beaconAnchor,
+      on: display,
+      size: viewState.size
+    )
     self.beaconAnchor = placement.anchor
     viewState.orientation = placement.anchor.edge.orientation
     effects.append(.placeBeacon(placement))

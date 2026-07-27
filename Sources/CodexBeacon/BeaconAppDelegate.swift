@@ -5,9 +5,17 @@ import SwiftUI
 
 @MainActor
 final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
+  private static let defaultHotKey = BeaconHotKey(
+    keyCode: UInt32(kVK_ANSI_C),
+    modifiers: UInt32(controlKey | optionKey | cmdKey)
+  )
+
+  private let preferencesStore = BeaconPreferencesStore()
+  private lazy var preferences = preferencesStore.load(fallbackHotKey: Self.defaultHotKey)
   private lazy var coordinator = AppCoordinator(
     requiresSharedRuntimeEvidence: true,
-    initialBeaconAnchor: BeaconPlacementStore.load()
+    initialBeaconAnchor: preferences.anchor,
+    initialBeaconSize: preferences.size
   )
   private var panel: BeaconPanel?
   private var taskMonitor: DesktopAppServerMonitor?
@@ -16,6 +24,8 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
   private var codexBundleID = "com.anthropic.codex"
   private var hotKeyReference: EventHotKeyRef?
   private var hotKeyEventHandlerReference: EventHandlerRef?
+  private var settingsWindowController: BeaconSettingsWindowController?
+  private var hotKeyRegistrationError: String?
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     coordinator.start()
@@ -50,7 +60,12 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
       requestsProvider: { [weak self] in self?.coordinator.drainAppServerRequests() ?? [] }
     )
     taskMonitor?.start()
-    registerGlobalHotKey()
+    installGlobalHotKeyEventHandler()
+    let status = registerGlobalHotKey(preferences.hotKey)
+    if status != noErr {
+      hotKeyRegistrationError = "无法注册已保存的全局快捷键（系统错误 \(status)）。请在设置中选择其他快捷键。"
+      showSettings()
+    }
   }
 
   func applicationWillTerminate(_ notification: Notification) {
@@ -93,7 +108,8 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
       case .activateCodex(let threadID):
         activateCodex(threadID: threadID)
       case .placeBeacon(let placement):
-        BeaconPlacementStore.save(placement.anchor)
+        preferences.anchor = placement.anchor
+        preferencesStore.save(preferences)
         updatePanelContent()
         panel?.apply(placement)
       }
@@ -152,7 +168,10 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
 
   // MARK: - Global Hotkey
 
-  private func registerGlobalHotKey() {
+  private func installGlobalHotKeyEventHandler() {
+    guard hotKeyEventHandlerReference == nil else {
+      return
+    }
     var eventType = EventTypeSpec(
       eventClass: OSType(kEventClassKeyboard),
       eventKind: OSType(kEventHotKeyPressed)
@@ -177,10 +196,14 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
       &hotKeyEventHandlerReference
     )
 
+  }
+
+  @discardableResult
+  private func registerGlobalHotKey(_ hotKey: BeaconHotKey) -> OSStatus {
     let hotKeyID = EventHotKeyID(signature: 0x4344_424B, id: 1)  // 'CDBK'
     let status = RegisterEventHotKey(
-      UInt32(kVK_ANSI_C),
-      UInt32(controlKey | optionKey | cmdKey),
+      hotKey.keyCode,
+      hotKey.modifiers,
       hotKeyID,
       GetApplicationEventTarget(),
       0,
@@ -190,13 +213,18 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
     if status != noErr {
       hotKeyReference = nil
     }
+    return status
   }
 
-  private func unregisterGlobalHotKey() {
+  private func unregisterRegisteredGlobalHotKey() {
     if let hotKeyReference {
       UnregisterEventHotKey(hotKeyReference)
       self.hotKeyReference = nil
     }
+  }
+
+  private func unregisterGlobalHotKey() {
+    unregisterRegisteredGlobalHotKey()
     if let hotKeyEventHandlerReference {
       RemoveEventHandler(hotKeyEventHandlerReference)
       self.hotKeyEventHandlerReference = nil
@@ -209,8 +237,7 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
   }
 
   private func toggleBeaconVisibility() {
-    let toggledVisibility = !coordinator.viewState.isVisible
-    coordinator.handle(.system(.visibilityChanged(toggledVisibility)))
+    coordinator.handle(.system(.globalHotKeyPressed))
     applyCoordinatorUpdate()
   }
 
@@ -250,9 +277,70 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
   }
 
   @objc private func handleSettingsFromMenu() {
-    // Acceptance criteria #5: opening settings does not change
-    // current task or quota state.
+    showSettings()
+  }
+
+  private func showSettings() {
+    let rootView = BeaconSettingsView(
+      size: preferences.size,
+      hotKey: preferences.hotKey,
+      registrationError: hotKeyRegistrationError,
+      onSizeSelected: { [weak self] size in
+        self?.updateBeaconSize(size)
+      },
+      onHotKeySelected: { [weak self] hotKey in
+        self?.replaceGlobalHotKey(with: hotKey)
+      }
+    )
+    let controller = BeaconSettingsWindowController(rootView: rootView)
+    settingsWindowController = controller
+    controller.showWindow(nil)
     NSApp.activate(ignoringOtherApps: true)
+  }
+
+  private func updateBeaconSize(_ size: BeaconSize) {
+    guard preferences.size != size else {
+      return
+    }
+    preferences.size = size
+    preferencesStore.save(preferences)
+    coordinator.handle(.user(.beaconSizeSelected(size)))
+    applyCoordinatorUpdate()
+  }
+
+  private func replaceGlobalHotKey(with hotKey: BeaconHotKey) -> String? {
+    guard preferences.hotKey != hotKey else {
+      return nil
+    }
+
+    let previousHotKey = preferences.hotKey
+    unregisterRegisteredGlobalHotKey()
+    let status = registerGlobalHotKey(hotKey)
+    guard status == noErr else {
+      let restorationStatus = registerGlobalHotKey(previousHotKey)
+      let message = hotKeyRegistrationFailureMessage(
+        status,
+        previousHotKeyRestored: restorationStatus == noErr
+      )
+      hotKeyRegistrationError = message
+      return message
+    }
+
+    preferences.hotKey = hotKey
+    preferencesStore.save(preferences)
+    hotKeyRegistrationError = nil
+    return nil
+  }
+
+  private func hotKeyRegistrationFailureMessage(
+    _ status: OSStatus,
+    previousHotKeyRestored: Bool = true
+  ) -> String {
+    if previousHotKeyRestored {
+      "无法注册该全局快捷键（系统错误 \(status)）。已恢复原来的快捷键。"
+    } else {
+      "无法注册该全局快捷键（系统错误 \(status)），且原快捷键无法重新注册；已保存的设置未被更改。"
+    }
   }
 
   @objc private func handleToggleVisibilityFromMenu() {
@@ -389,23 +477,5 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
 
   private func beaconRect(from frame: NSRect) -> BeaconRect {
     BeaconRect(x: frame.minX, y: frame.minY, width: frame.width, height: frame.height)
-  }
-}
-
-private enum BeaconPlacementStore {
-  private static let key = "beaconPlacementAnchor"
-
-  static func load() -> BeaconAnchor? {
-    guard let data = UserDefaults.standard.data(forKey: key) else {
-      return nil
-    }
-    return try? JSONDecoder().decode(BeaconAnchor.self, from: data)
-  }
-
-  static func save(_ anchor: BeaconAnchor) {
-    guard let data = try? JSONEncoder().encode(anchor) else {
-      return
-    }
-    UserDefaults.standard.set(data, forKey: key)
   }
 }
