@@ -753,7 +753,7 @@ private final class UnixWebSocketClient: @unchecked Sendable {
   private let received: (String) -> Void
   private let failed: (String) -> Void
   private var socket: FileHandle?
-  private var buffer = Data()
+  private var frameDecoder = WebSocketFrameDecoder()
   private var isUpgraded = false
 
   init(socketPath: String, received: @escaping (String) -> Void, failed: @escaping (String) -> Void) {
@@ -812,40 +812,34 @@ private final class UnixWebSocketClient: @unchecked Sendable {
   }
 
   private func consume(_ data: Data) {
-    buffer.append(data)
+    frameDecoder.append(data)
     if !isUpgraded {
-      guard let range = buffer.range(of: Data("\r\n\r\n".utf8)) else { return }
-      let response = String(decoding: buffer[..<range.lowerBound], as: UTF8.self)
+      guard let response = frameDecoder.consumeHTTPUpgradeResponse() else { return }
       guard response.hasPrefix("HTTP/1.1 101") else { reportFailure("The App Server rejected the WebSocket upgrade."); return }
-      buffer.removeSubrange(..<range.upperBound)
       isUpgraded = true
       send(["id": 1, "method": "initialize", "params": [
         "clientInfo": ["name": "codex-beacon", "title": "Codex Beacon passive observer", "version": "0.1.0"],
         "capabilities": ["experimentalApi": true],
       ]])
     }
-    while !buffer.isEmpty {
-      let byteCountBeforeParsing = buffer.count
-      if let message = nextTextMessage() {
-        received(message)
+    while frameDecoder.hasBufferedData {
+      let byteCountBeforeParsing = frameDecoder.bufferedByteCount
+      guard let frame = frameDecoder.nextFrame() else { break }
+      switch frame.opcode {
+      case 0x8:
+        reportFailure("The shared App Server closed the WebSocket.")
+        return
+      case 0x9:
+        sendFrame(opcode: 0xA, payload: frame.payload)
+      case 0x1:
+        if let message = String(data: frame.payload, encoding: .utf8) {
+          received(message)
+        }
+      default:
+        break
       }
-      guard buffer.count < byteCountBeforeParsing else { break }
+      guard frameDecoder.bufferedByteCount < byteCountBeforeParsing else { break }
     }
-  }
-
-  private func nextTextMessage() -> String? {
-    guard buffer.count >= 2 else { return nil }
-    let bytes = [UInt8](buffer)
-    let opcode = bytes[0] & 0x0F
-    var offset = 2
-    var length = Int(bytes[1] & 0x7F)
-    if length == 126 { guard bytes.count >= 4 else { return nil }; length = Int(bytes[2]) << 8 | Int(bytes[3]); offset = 4 }
-    if length == 127 || bytes.count < offset + length { return nil }
-    let payload = Data(bytes[offset..<(offset + length)])
-    buffer.removeSubrange(..<(offset + length))
-    if opcode == 0x8 { reportFailure("The shared App Server closed the WebSocket."); return nil }
-    if opcode == 0x9 { sendFrame(opcode: 0xA, payload: payload); return nil }
-    return opcode == 0x1 ? String(data: payload, encoding: .utf8) : nil
   }
 
   private func sendFrame(opcode: UInt8, payload: Data) {
@@ -860,4 +854,55 @@ private final class UnixWebSocketClient: @unchecked Sendable {
   }
 
   private func reportFailure(_ reason: String) { DispatchQueue.main.async { self.failed(reason) } }
+}
+
+struct WebSocketFrameDecoder {
+  struct Frame {
+    let opcode: UInt8
+    let payload: Data
+  }
+
+  private var buffer = Data()
+
+  var hasBufferedData: Bool { !buffer.isEmpty }
+  var bufferedByteCount: Int { buffer.count }
+
+  mutating func append(_ data: Data) {
+    buffer.append(data)
+  }
+
+  mutating func consumeHTTPUpgradeResponse() -> String? {
+    guard let range = buffer.range(of: Data("\r\n\r\n".utf8)) else { return nil }
+    let response = String(decoding: buffer[..<range.lowerBound], as: UTF8.self)
+    buffer.removeSubrange(..<range.upperBound)
+    return response
+  }
+
+  mutating func nextFrame() -> Frame? {
+    guard buffer.count >= 2 else { return nil }
+    let bytes = [UInt8](buffer)
+    let opcode = bytes[0] & 0x0F
+    var offset = 2
+    var length = Int(bytes[1] & 0x7F)
+
+    if length == 126 {
+      guard bytes.count >= 4 else { return nil }
+      length = Int(bytes[2]) << 8 | Int(bytes[3])
+      offset = 4
+    }
+    if length == 127 {
+      guard bytes.count >= 10 else { return nil }
+      let extendedLength = bytes[2..<10].reduce(UInt64(0)) { partial, byte in
+        (partial << 8) | UInt64(byte)
+      }
+      guard extendedLength <= UInt64(Int.max) else { return nil }
+      length = Int(extendedLength)
+      offset = 10
+    }
+    guard length <= bytes.count - offset else { return nil }
+
+    let payload = Data(bytes[offset..<(offset + length)])
+    buffer.removeSubrange(..<(offset + length))
+    return Frame(opcode: opcode, payload: payload)
+  }
 }
