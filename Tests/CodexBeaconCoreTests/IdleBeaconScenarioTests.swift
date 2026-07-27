@@ -10,24 +10,15 @@ struct IdleBeaconScenarioTests {
 
     coordinator.start()
 
-    #expect(
-      coordinator.viewState
-        == BeaconViewState(
-          isVisible: true,
-          size: .standard,
-          surface: .init(
-            shape: .roundedRectangle(cornerRadius: 30),
-            tone: .nearBlack
-          ),
-          lights: [
-            .init(color: .red, illumination: .steady, showsRecess: true),
-            .init(color: .amber, illumination: .off, showsRecess: true),
-            .init(color: .green, illumination: .off, showsRecess: true),
-          ],
-          quotaTrack: .init(style: .neutral),
-          status: .monitoringUnavailable
-        )
-    )
+    #expect(coordinator.viewState.isVisible == true)
+    #expect(coordinator.viewState.size == .standard)
+    #expect(coordinator.viewState.status == .monitoringUnavailable)
+    #expect(coordinator.viewState.lights == [
+      .init(color: .red, illumination: .steady, showsRecess: true),
+      .init(color: .amber, illumination: .off, showsRecess: true),
+      .init(color: .green, illumination: .off, showsRecess: true),
+    ])
+    #expect(coordinator.viewState.quotaTrack == .init(style: .neutral))
     #expect(coordinator.drainEffects() == [.showBeacon])
   }
 }

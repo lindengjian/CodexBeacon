@@ -49,10 +49,12 @@ public enum BeaconStatus: Equatable, Sendable {
 public struct WaitingTask: Equatable, Sendable {
   public let threadID: String
   public let firstObservedAt: Date
+  public let title: String?
 
-  public init(threadID: String, firstObservedAt: Date) {
+  public init(threadID: String, firstObservedAt: Date, title: String? = nil) {
     self.threadID = threadID
     self.firstObservedAt = firstObservedAt
+    self.title = title
   }
 }
 
@@ -123,6 +125,75 @@ public struct QuotaTrackState: Equatable, Sendable {
   }
 }
 
+public enum HoverTaskState: Equatable, Sendable {
+  case working
+  case waitingForYou
+  case completed
+}
+
+public struct HoverTaskEntry: Equatable, Sendable {
+  public let threadID: String
+  public let title: String?
+  public let state: HoverTaskState
+
+  public init(threadID: String, title: String?, state: HoverTaskState) {
+    self.threadID = threadID
+    self.title = title
+    self.state = state
+  }
+}
+
+public struct HoverDetailState: Equatable, Sendable {
+  public let status: BeaconStatus
+  public let workingCount: Int
+  public let waitingCount: Int
+  public let completedCount: Int
+  public let tasks: [HoverTaskEntry]
+  public let quotaWindows: [QuotaWindow]
+  public let lastUpdatedAt: Date?
+  public let taskError: String?
+  public let quotaError: String?
+  public let showTaskTitles: Bool
+
+  public init(
+    status: BeaconStatus,
+    workingCount: Int,
+    waitingCount: Int,
+    completedCount: Int,
+    tasks: [HoverTaskEntry],
+    quotaWindows: [QuotaWindow],
+    lastUpdatedAt: Date?,
+    taskError: String?,
+    quotaError: String?,
+    showTaskTitles: Bool
+  ) {
+    self.status = status
+    self.workingCount = workingCount
+    self.waitingCount = waitingCount
+    self.completedCount = completedCount
+    self.tasks = tasks
+    self.quotaWindows = quotaWindows
+    self.lastUpdatedAt = lastUpdatedAt
+    self.taskError = taskError
+    self.quotaError = quotaError
+    self.showTaskTitles = showTaskTitles
+  }
+
+  public var aggregateCountsDescription: String {
+    var parts: [String] = []
+    if workingCount > 0 {
+      parts.append("工作 \(workingCount)")
+    }
+    if waitingCount > 0 {
+      parts.append("等待你 \(waitingCount)")
+    }
+    if completedCount > 0 {
+      parts.append("完成 \(completedCount)")
+    }
+    return parts.joined(separator: " · ")
+  }
+}
+
 public struct BeaconViewState: Equatable, Sendable {
   public var isVisible: Bool
   public var size: BeaconSize
@@ -135,6 +206,8 @@ public struct BeaconViewState: Equatable, Sendable {
   public var reducesMotion: Bool
   public private(set) var waitingTasks: [WaitingTask]
   public private(set) var unconfirmedCompletionTaskIDs: Set<String>
+  public var hoverDetail: HoverDetailState?
+  public var showTaskTitles: Bool
 
   public var dimensions: BeaconDimensions {
     size.dimensions(for: orientation)
@@ -151,7 +224,9 @@ public struct BeaconViewState: Equatable, Sendable {
     lastUpdatedAt: Date? = nil,
     reducesMotion: Bool = false,
     waitingTasks: [WaitingTask] = [],
-    unconfirmedCompletionTaskIDs: Set<String> = []
+    unconfirmedCompletionTaskIDs: Set<String> = [],
+    hoverDetail: HoverDetailState? = nil,
+    showTaskTitles: Bool = false
   ) {
     self.isVisible = isVisible
     self.size = size
@@ -164,6 +239,8 @@ public struct BeaconViewState: Equatable, Sendable {
     self.reducesMotion = reducesMotion
     self.waitingTasks = waitingTasks
     self.unconfirmedCompletionTaskIDs = unconfirmedCompletionTaskIDs
+    self.hoverDetail = hoverDetail
+    self.showTaskTitles = showTaskTitles
   }
 
   public static let idle = BeaconViewState(

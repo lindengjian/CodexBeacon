@@ -21,13 +21,15 @@ public final class AppCoordinator {
   private var observationTime = Date()
   private var displayLayout: BeaconDisplayLayout?
   private var beaconAnchor: BeaconAnchor?
+  private var showTaskTitles: Bool
 
   public var autoConfirmCondition: (() -> Bool)?
 
   public init(
     requiresSharedRuntimeEvidence: Bool = false,
     initialBeaconAnchor: BeaconAnchor? = nil,
-    initialBeaconSize: BeaconSize = .standard
+    initialBeaconSize: BeaconSize = .standard,
+    showTaskTitles: Bool = false
   ) {
     let requestIDGenerator = AppServerRequestIDGenerator()
     self.requestIDGenerator = requestIDGenerator
@@ -37,6 +39,14 @@ public final class AppCoordinator {
     sharedRuntimeValidated = !requiresSharedRuntimeEvidence
     beaconAnchor = initialBeaconAnchor
     viewState.size = initialBeaconSize
+    self.showTaskTitles = showTaskTitles
+    viewState.showTaskTitles = showTaskTitles
+  }
+
+  public func setShowTaskTitles(_ enabled: Bool) {
+    showTaskTitles = enabled
+    viewState.showTaskTitles = enabled
+    updateHoverDetail()
   }
 
   public func start() {
@@ -46,6 +56,7 @@ public final class AppCoordinator {
 
     hasStarted = true
     viewState.present(.monitoringUnavailable)
+    updateHoverDetail()
     effects.append(.showBeacon)
   }
 
@@ -68,10 +79,12 @@ public final class AppCoordinator {
       presentTaskStatus(taskMonitor.connectionFailed())
       quotaMonitor.connectionFailed()
       viewState.quotaTrack = quotaTrackState(from: quotaMonitor.accountQuota)
+      updateHoverDetail()
     case .task(.monitoringObservationBecameStale):
       presentTaskStatus(taskMonitor.observationBecameStale())
       quotaMonitor.observationBecameStale()
       viewState.quotaTrack = quotaTrackState(from: quotaMonitor.accountQuota)
+      updateHoverDetail()
     case .task(.monitoringSnapshotRequested):
       presentTaskStatus(
         sharedRuntimeValidated
@@ -89,6 +102,7 @@ public final class AppCoordinator {
       }
       if quotaHandled {
         viewState.quotaTrack = quotaTrackState(from: quotaMonitor.accountQuota)
+        updateHoverDetail()
       }
       let newCompletions = taskMonitor.unconfirmedCompletionTaskIDs.subtracting(
         completionsBefore)
@@ -171,6 +185,7 @@ public final class AppCoordinator {
       waitingTasks: taskMonitor.waitingTasks,
       unconfirmedCompletionTaskIDs: taskMonitor.unconfirmedCompletionTaskIDs
     )
+    updateHoverDetail()
   }
 
   private func updateBeaconPlacement(for layout: BeaconDisplayLayout) {
@@ -220,6 +235,49 @@ public final class AppCoordinator {
       style: .gauge,
       fillFraction: fill,
       detailWindows: quota.windows
+    )
+  }
+
+  private func updateHoverDetail() {
+    let titles = taskMonitor.allTaskTitles
+    let waitingTasks = taskMonitor.waitingTasks
+    let workingIDs = taskMonitor.workingTaskIDs
+    let completedIDs = taskMonitor.unconfirmedCompletionTaskIDs
+    let status = sharedRuntimeValidated ? taskMonitor.status : .monitoringUnavailable
+    let quota = quotaMonitor.accountQuota
+
+    var tasks: [HoverTaskEntry] = []
+    for waiting in waitingTasks {
+      tasks.append(HoverTaskEntry(
+        threadID: waiting.threadID,
+        title: titles[waiting.threadID] ?? waiting.title,
+        state: .waitingForYou
+      ))
+    }
+    for id in workingIDs {
+      guard !waitingTasks.contains(where: { $0.threadID == id }) else { continue }
+      tasks.append(HoverTaskEntry(threadID: id, title: titles[id], state: .working))
+    }
+    for id in completedIDs {
+      tasks.append(HoverTaskEntry(threadID: id, title: titles[id], state: .completed))
+    }
+
+    let taskError: String? =
+      status == .monitoringUnavailable ? "任务监测不可用" : nil
+    let quotaError: String? =
+      !quota.isAvailable ? "额度信息不可用" : nil
+
+    viewState.hoverDetail = HoverDetailState(
+      status: status,
+      workingCount: workingIDs.count,
+      waitingCount: waitingTasks.count,
+      completedCount: completedIDs.count,
+      tasks: tasks,
+      quotaWindows: quota.windows,
+      lastUpdatedAt: viewState.lastUpdatedAt,
+      taskError: taskError,
+      quotaError: quotaError,
+      showTaskTitles: showTaskTitles
     )
   }
 }

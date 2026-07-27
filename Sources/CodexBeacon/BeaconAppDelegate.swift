@@ -15,7 +15,8 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
   private lazy var coordinator = AppCoordinator(
     requiresSharedRuntimeEvidence: true,
     initialBeaconAnchor: preferences.anchor,
-    initialBeaconSize: preferences.size
+    initialBeaconSize: preferences.size,
+    showTaskTitles: preferences.showTaskTitles
   )
   private var panel: BeaconPanel?
   private var taskMonitor: DesktopAppServerMonitor?
@@ -301,11 +302,15 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
       size: preferences.size,
       hotKey: preferences.hotKey,
       registrationError: hotKeyRegistrationError,
+      showTaskTitles: preferences.showTaskTitles,
       onSizeSelected: { [weak self] size in
         self?.updateBeaconSize(size)
       },
       onHotKeySelected: { [weak self] hotKey in
         self?.replaceGlobalHotKey(with: hotKey)
+      },
+      onShowTaskTitlesChanged: { [weak self] enabled in
+        self?.updateShowTaskTitles(enabled)
       },
       integrationSettings: integrationSettings
     )
@@ -471,6 +476,13 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
     preferences.size = size
     preferencesStore.save(preferences)
     coordinator.handle(.user(.beaconSizeSelected(size)))
+    applyCoordinatorUpdate()
+  }
+
+  private func updateShowTaskTitles(_ enabled: Bool) {
+    preferences.showTaskTitles = enabled
+    preferencesStore.save(preferences)
+    coordinator.setShowTaskTitles(enabled)
     applyCoordinatorUpdate()
   }
 

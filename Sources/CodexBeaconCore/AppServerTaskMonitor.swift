@@ -49,13 +49,24 @@ struct AppServerTaskMonitor {
       else {
         return nil
       }
-      return WaitingTask(threadID: thread.id, firstObservedAt: firstObservedAt)
+      return WaitingTask(
+        threadID: thread.id, firstObservedAt: firstObservedAt, title: thread.title)
     }
     .sorted {
       $0.firstObservedAt == $1.firstObservedAt
         ? $0.threadID < $1.threadID
         : $0.firstObservedAt < $1.firstObservedAt
     }
+  }
+
+  var allTaskTitles: [String: String] {
+    var titles: [String: String] = [:]
+    for thread in observedThreads.values {
+      if thread.isUserVisibleRoot, let title = thread.title {
+        titles[thread.id] = title
+      }
+    }
+    return titles
   }
 
   var unconfirmedCompletionTaskIDs: Set<String> {
@@ -282,7 +293,8 @@ struct AppServerTaskMonitor {
       isUserVisibleRoot: isUserVisibleRoot,
       taskState: taskState,
       previous: observedThreads[thread.id],
-      observedAt: observedAt
+      observedAt: observedAt,
+      title: thread.title
     )
     outstandingInitialReads.remove(thread.id)
 
@@ -509,7 +521,8 @@ struct AppServerTaskMonitor {
     isUserVisibleRoot: Bool,
     taskState: ObservedTaskState,
     previous: ObservedThread?,
-    observedAt: Date
+    observedAt: Date,
+    title: String? = nil
   ) -> ObservedThread {
     ObservedThread(
       id: id,
@@ -518,7 +531,8 @@ struct AppServerTaskMonitor {
       waitingSince: taskState == .waitingForYou
         ? previous?.waitingSince ?? observedAt
         : nil,
-      observedAt: previous?.observedAt ?? observedAt
+      observedAt: previous?.observedAt ?? observedAt,
+      title: title ?? previous?.title
     )
   }
 }
@@ -557,6 +571,7 @@ private struct ObservedThread {
   let taskState: ObservedTaskState
   let waitingSince: Date?
   let observedAt: Date
+  let title: String?
 }
 
 private enum ObservedTaskState: Equatable {
@@ -607,6 +622,7 @@ private struct ProtocolThread: Decodable {
   let ephemeral: Bool
   let parentThreadId: String?
   let status: ProtocolThreadStatus?
+  let title: String?
 }
 
 private enum ProtocolThreadSource: Decodable {

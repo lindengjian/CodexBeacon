@@ -86,5 +86,52 @@ struct BeaconPreferencesTests {
     #expect(restored.hotKey == fallbackHotKey)
     #expect(!restored.hasCompletedInitialSetup)
     #expect(restored.launchesAtLogin)
+    #expect(!restored.showTaskTitles)
+  }
+
+  @Test("showTaskTitles defaults to false for legacy preferences without the field")
+  func showTaskTitlesDefaultsFalseForLegacyData() throws {
+    let suiteName = "BeaconPreferencesTests.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+
+    let fallbackHotKey = BeaconHotKey(keyCode: 8, modifiers: 6_400)
+    let data = try #require(
+      """
+      {"size":"standard","hotKey":{"keyCode":8,"modifiers":6400},"anchor":null,"hasCompletedInitialSetup":true,"launchesAtLogin":true}
+      """.data(using: .utf8)
+    )
+    defaults.set(data, forKey: "beaconPreferences")
+
+    let restored = BeaconPreferencesStore(defaults: defaults).load(fallbackHotKey: fallbackHotKey)
+
+    #expect(!restored.showTaskTitles)
+  }
+
+  @Test("showTaskTitles persists and restores correctly")
+  func showTaskTitlesPersists() throws {
+    let suiteName = "BeaconPreferencesTests.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+
+    let store = BeaconPreferencesStore(defaults: defaults)
+    let fallbackHotKey = BeaconHotKey(keyCode: 8, modifiers: 6_400)
+    var preferences = BeaconPreferences(
+      size: .standard,
+      hotKey: fallbackHotKey,
+      anchor: nil,
+      showTaskTitles: true
+    )
+
+    store.save(preferences)
+    let restored = store.load(fallbackHotKey: fallbackHotKey)
+
+    #expect(restored.showTaskTitles)
+
+    preferences.showTaskTitles = false
+    store.save(preferences)
+    let restoredAgain = store.load(fallbackHotKey: fallbackHotKey)
+
+    #expect(!restoredAgain.showTaskTitles)
   }
 }

@@ -10,6 +10,7 @@ private enum BeaconColor {
 struct IdleBeaconView: View {
   @ObservedObject var stateStore: BeaconViewStateStore
   let onActivate: () -> Void
+  @State private var isHovering = false
 
   private var state: BeaconViewState {
     stateStore.state
@@ -55,6 +56,12 @@ struct IdleBeaconView: View {
     .accessibilityElement(children: .ignore)
     .accessibilityLabel("Codex Beacon")
     .accessibilityValue(accessibilityValue)
+    .onHover { isHovering = $0 }
+    .popover(isPresented: $isHovering, arrowEdge: state.orientation == .vertical ? .leading : .bottom) {
+      if let detail = state.hoverDetail {
+        HoverDetailView(detail: detail)
+      }
+    }
     .onTapGesture(perform: onActivate)
   }
 
@@ -285,4 +292,179 @@ private struct QuotaTrack: View {
     return formatter.string(from: resetAt)
   }
 
+}
+
+struct HoverDetailView: View {
+  let detail: HoverDetailState
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 10) {
+      statusHeader
+
+      if !detail.aggregateCountsDescription.isEmpty {
+        Text(detail.aggregateCountsDescription)
+          .font(.system(size: 12, weight: .semibold))
+      }
+
+      if !detail.tasks.isEmpty {
+        taskList
+      }
+
+      if !detail.quotaWindows.isEmpty {
+        quotaSection
+      }
+
+      if let lastUpdated = detail.lastUpdatedAt {
+        Text("更新于 \(lastUpdated.formatted(date: .abbreviated, time: .shortened))")
+          .font(.system(size: 10))
+          .foregroundStyle(.secondary)
+      }
+
+      if let taskError = detail.taskError {
+        errorRow(icon: "exclamationmark.triangle", message: taskError)
+      }
+      if let quotaError = detail.quotaError {
+        errorRow(icon: "chart.bar.xaxis", message: quotaError)
+      }
+    }
+    .padding(12)
+    .frame(minWidth: 200, maxWidth: 280)
+  }
+
+  private var statusHeader: some View {
+    HStack(spacing: 6) {
+      Circle()
+        .fill(statusColor)
+        .frame(width: 8, height: 8)
+      Text(statusText)
+        .font(.system(size: 13, weight: .medium))
+    }
+  }
+
+  private var statusColor: Color {
+    switch detail.status {
+    case .idle:
+      return .gray
+    case .working:
+      return Color(red: 0.98, green: 0.61, blue: 0.12)
+    case .waitingForYou:
+      return Color(red: 0.17, green: 0.82, blue: 0.36)
+    case .completed:
+      return Color(red: 0.17, green: 0.82, blue: 0.36)
+    case .monitoringUnavailable:
+      return Color(red: 0.95, green: 0.18, blue: 0.17)
+    }
+  }
+
+  private var statusText: String {
+    switch detail.status {
+    case .idle:
+      return "空闲"
+    case .working:
+      return "工作中"
+    case .waitingForYou:
+      return "等待你"
+    case .completed:
+      return "已完成"
+    case .monitoringUnavailable:
+      return "监测不可用"
+    }
+  }
+
+  private var taskList: some View {
+    VStack(alignment: .leading, spacing: 4) {
+      Text("任务")
+        .font(.system(size: 10, weight: .semibold))
+        .foregroundStyle(.secondary)
+      ForEach(detail.tasks, id: \.threadID) { task in
+        HStack(spacing: 6) {
+          Circle()
+            .fill(taskStateColor(task.state))
+            .frame(width: 6, height: 6)
+          if detail.showTaskTitles, let title = task.title {
+            Text(title)
+              .font(.system(size: 11))
+              .lineLimit(1)
+          } else {
+            Text(taskStateText(task.state))
+              .font(.system(size: 11))
+          }
+        }
+      }
+    }
+  }
+
+  private func taskStateColor(_ state: HoverTaskState) -> Color {
+    switch state {
+    case .working:
+      return Color(red: 0.98, green: 0.61, blue: 0.12)
+    case .waitingForYou:
+      return Color(red: 0.17, green: 0.82, blue: 0.36)
+    case .completed:
+      return .gray
+    }
+  }
+
+  private func taskStateText(_ state: HoverTaskState) -> String {
+    switch state {
+    case .working:
+      return "工作中"
+    case .waitingForYou:
+      return "等待你"
+    case .completed:
+      return "已完成"
+    }
+  }
+
+  private var quotaSection: some View {
+    VStack(alignment: .leading, spacing: 4) {
+      Text("额度")
+        .font(.system(size: 10, weight: .semibold))
+        .foregroundStyle(.secondary)
+      ForEach(detail.quotaWindows, id: \.windowKey) { window in
+        HStack {
+          Text(quotaWindowLabel(window))
+            .font(.system(size: 11))
+          Spacer()
+          Text(String(format: "%.0f%%", window.remainingPercentage))
+            .font(.system(size: 11, design: .monospaced))
+            .foregroundStyle(.secondary)
+          if let resetText = quotaResetText(window) {
+            Text(resetText)
+              .font(.system(size: 9))
+              .foregroundStyle(.tertiary)
+          }
+        }
+      }
+    }
+  }
+
+  private func quotaWindowLabel(_ window: QuotaWindow) -> String {
+    let mins = Int(window.durationSeconds / 60)
+    if mins >= 1440 {
+      return "\(mins / 1440)天"
+    } else if mins >= 60 {
+      return "\(mins / 60)小时"
+    } else {
+      return "\(mins)分钟"
+    }
+  }
+
+  private func quotaResetText(_ window: QuotaWindow) -> String? {
+    guard let resetAt = window.resetAt else { return nil }
+    let formatter = DateFormatter()
+    formatter.dateFormat = "M/d HH:mm"
+    return formatter.string(from: resetAt)
+  }
+
+  private func errorRow(icon: String, message: String) -> some View {
+    HStack(spacing: 6) {
+      Image(systemName: icon)
+        .font(.system(size: 10))
+        .foregroundStyle(.red)
+      Text(message)
+        .font(.system(size: 10))
+        .foregroundStyle(.red)
+    }
+  }
 }

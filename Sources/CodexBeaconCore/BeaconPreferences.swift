@@ -16,19 +16,22 @@ public struct BeaconPreferences: Codable, Equatable, Sendable {
   public var anchor: BeaconAnchor?
   public var hasCompletedInitialSetup: Bool
   public var launchesAtLogin: Bool
+  public var showTaskTitles: Bool
 
   public init(
     size: BeaconSize,
     hotKey: BeaconHotKey,
     anchor: BeaconAnchor?,
     hasCompletedInitialSetup: Bool = false,
-    launchesAtLogin: Bool = true
+    launchesAtLogin: Bool = true,
+    showTaskTitles: Bool = false
   ) {
     self.size = size
     self.hotKey = hotKey
     self.anchor = anchor
     self.hasCompletedInitialSetup = hasCompletedInitialSetup
     self.launchesAtLogin = launchesAtLogin
+    self.showTaskTitles = showTaskTitles
   }
 
   private enum CodingKeys: String, CodingKey {
@@ -37,6 +40,7 @@ public struct BeaconPreferences: Codable, Equatable, Sendable {
     case anchor
     case hasCompletedInitialSetup
     case launchesAtLogin
+    case showTaskTitles
   }
 
   public init(from decoder: Decoder) throws {
@@ -49,6 +53,7 @@ public struct BeaconPreferences: Codable, Equatable, Sendable {
       forKey: .hasCompletedInitialSetup
     ) ?? false
     launchesAtLogin = try container.decodeIfPresent(Bool.self, forKey: .launchesAtLogin) ?? true
+    showTaskTitles = try container.decodeIfPresent(Bool.self, forKey: .showTaskTitles) ?? false
   }
 }
 

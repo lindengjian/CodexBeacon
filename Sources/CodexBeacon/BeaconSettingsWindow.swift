@@ -63,8 +63,10 @@ struct BeaconSettingsView: View {
     size: BeaconSize,
     hotKey: BeaconHotKey,
     registrationError: String? = nil,
+    showTaskTitles: Bool = false,
     onSizeSelected: @escaping (BeaconSize) -> Void,
     onHotKeySelected: @escaping (BeaconHotKey) -> String?,
+    onShowTaskTitlesChanged: @escaping (Bool) -> Void = { _ in },
     integrationSettings: BeaconIntegrationSettingsModel? = nil
   ) {
     _model = StateObject(
@@ -72,8 +74,10 @@ struct BeaconSettingsView: View {
         size: size,
         hotKey: hotKey,
         registrationError: registrationError,
+        showTaskTitles: showTaskTitles,
         onSizeSelected: onSizeSelected,
-        onHotKeySelected: onHotKeySelected
+        onHotKeySelected: onHotKeySelected,
+        onShowTaskTitlesChanged: onShowTaskTitlesChanged
       )
     )
     self.integrationSettings = integrationSettings
@@ -115,6 +119,19 @@ struct BeaconSettingsView: View {
           .foregroundStyle(.red)
       }
 
+      VStack(alignment: .leading, spacing: 8) {
+        Toggle(
+          "显示任务标题",
+          isOn: Binding(
+            get: { model.showTaskTitles },
+            set: { model.updateShowTaskTitles($0) }
+          )
+        )
+        Text("开启后在悬停详情中显示任务标题。关闭后仅显示聚合计数。")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
+
       if let integrationSettings {
         BeaconIntegrationSettingsSection(model: integrationSettings)
       }
@@ -129,22 +146,28 @@ final class BeaconSettingsModel: ObservableObject {
   @Published private(set) var size: BeaconSize
   @Published var hotKey: BeaconHotKey
   @Published var hotKeyError: String?
+  @Published private(set) var showTaskTitles: Bool
 
   private let onSizeSelected: (BeaconSize) -> Void
   private let onHotKeySelected: (BeaconHotKey) -> String?
+  private let onShowTaskTitlesChanged: (Bool) -> Void
 
   init(
     size: BeaconSize,
     hotKey: BeaconHotKey,
     registrationError: String?,
+    showTaskTitles: Bool = false,
     onSizeSelected: @escaping (BeaconSize) -> Void,
-    onHotKeySelected: @escaping (BeaconHotKey) -> String?
+    onHotKeySelected: @escaping (BeaconHotKey) -> String?,
+    onShowTaskTitlesChanged: @escaping (Bool) -> Void = { _ in }
   ) {
     self.size = size
     self.hotKey = hotKey
     hotKeyError = registrationError
+    self.showTaskTitles = showTaskTitles
     self.onSizeSelected = onSizeSelected
     self.onHotKeySelected = onHotKeySelected
+    self.onShowTaskTitlesChanged = onShowTaskTitlesChanged
   }
 
   func selectSize(_ size: BeaconSize) {
@@ -163,6 +186,12 @@ final class BeaconSettingsModel: ObservableObject {
     self.hotKey = hotKey
     hotKeyError = nil
     return nil
+  }
+
+  func updateShowTaskTitles(_ enabled: Bool) {
+    guard showTaskTitles != enabled else { return }
+    showTaskTitles = enabled
+    onShowTaskTitlesChanged(enabled)
   }
 }
 
