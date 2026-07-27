@@ -166,20 +166,64 @@ private enum CompatibilityError: LocalizedError {
 final class LocalDiagnosticStore {
   let directory: URL
   let fileURL: URL
+  private static let writeLock = NSLock()
 
-  init(fileManager: FileManager = .default) {
-    directory = fileManager.homeDirectoryForCurrentUser
+  init(
+    fileManager: FileManager = .default,
+    directory: URL? = nil
+  ) {
+    self.directory = directory ?? fileManager.homeDirectoryForCurrentUser
       .appendingPathComponent("Library/Application Support/CodexBeacon")
-    fileURL = directory.appendingPathComponent("task-monitoring-diagnostic.txt")
+    fileURL = self.directory.appendingPathComponent("task-monitoring-diagnostic.txt")
   }
 
   func createDirectory() throws {
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
   }
 
-  func record(_ message: String) {
-    try? createDirectory()
-    let datedMessage = "\(ISO8601DateFormatter().string(from: Date())) \(message)\n"
-    try? datedMessage.write(to: fileURL, atomically: true, encoding: .utf8)
+  /// Starts a fresh, self-contained trace for one Beacon process run. All
+  /// later entries append to this file, so the final transition before a
+  /// failure is retained instead of overwriting earlier evidence.
+  func beginRun(runID: String = UUID().uuidString, startedAt: Date = Date()) {
+    let header = [
+      "# Codex Beacon task-monitoring diagnostic trace",
+      "run_id=\(runID)",
+      "started_at=\(timestamp(for: startedAt))",
+      "format_version=1",
+      "",
+    ].joined(separator: "\n")
+
+    Self.writeLock.lock()
+    defer { Self.writeLock.unlock() }
+    do {
+      try createDirectory()
+      try header.write(to: fileURL, atomically: true, encoding: .utf8)
+    } catch {
+      // Diagnostics must never interfere with passive task observation.
+    }
+  }
+
+  func record(_ message: String, at date: Date = Date()) {
+    let entry = "\(timestamp(for: date)) \(message)\n"
+
+    Self.writeLock.lock()
+    defer { Self.writeLock.unlock() }
+    do {
+      try createDirectory()
+      if FileManager.default.fileExists(atPath: fileURL.path) {
+        let handle = try FileHandle(forWritingTo: fileURL)
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data(entry.utf8))
+        try handle.close()
+      } else {
+        try entry.write(to: fileURL, atomically: true, encoding: .utf8)
+      }
+    } catch {
+      // Diagnostics must never interfere with passive task observation.
+    }
+  }
+
+  private func timestamp(for date: Date) -> String {
+    ISO8601DateFormatter().string(from: date)
   }
 }

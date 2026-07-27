@@ -48,6 +48,13 @@ observes a loaded `vscode` Desktop thread. Local diagnostics are stored at:
 ~/Library/Application Support/CodexBeacon/task-monitoring-diagnostic.txt
 ```
 
+The file is reset when Beacon starts monitoring, then appends the complete
+current run: connection lifecycle, every App Server request and response
+(including the original JSON payload), task-state resolution, and the state
+applied to the Beacon panel. After reproducing a status issue, quit Beacon or
+copy this file and share it for diagnosis. It is local-only, but may contain
+task IDs and titles, so review it before sharing outside a trusted channel.
+
 To remove Beacon's labelled LaunchAgent and restore the previous launchd
 environment value, quit Codex Desktop and run:
 

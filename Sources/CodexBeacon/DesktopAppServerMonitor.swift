@@ -17,7 +17,7 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
   private let socketPath: String
   private let bundledCLIURL: URL?
   private let compatibilityAdapter = DesktopDaemonCompatibilityAdapter()
-  private let diagnosticStore = LocalDiagnosticStore()
+  private let diagnosticStore: LocalDiagnosticStore
   private var client: UnixWebSocketClient?
   private var didInitialize = false
   private var sawSharedDesktopRuntime = false
@@ -44,20 +44,25 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
     deliver: @escaping EventHandler,
     requestsProvider: @escaping RequestsProvider,
     socketPath: String = DesktopAppServerMonitor.defaultSocketPath,
-    bundledCLIURL: URL? = DesktopAppServerMonitor.findBundledCLI()
+    bundledCLIURL: URL? = DesktopAppServerMonitor.findBundledCLI(),
+    diagnosticStore: LocalDiagnosticStore = .init()
   ) {
     self.deliver = deliver
     self.requestsProvider = requestsProvider
     self.socketPath = socketPath
     self.bundledCLIURL = bundledCLIURL
+    self.diagnosticStore = diagnosticStore
   }
 
   func start() {
+    diagnosticStore.beginRun()
+    diagnosticStore.record("lifecycle monitor_start socket_path=\(socketPath)")
     isStopped = false
     attemptConnection()
   }
 
   func stop() {
+    diagnosticStore.record("lifecycle monitor_stop")
     isStopped = true
     retryWorkItem?.cancel()
     retryWorkItem = nil
@@ -175,9 +180,13 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
 
   private func attemptConnection() {
     guard !isStopped, !connectionAttemptInFlight else {
+      diagnosticStore.record(
+        "connection attempt_skipped stopped=\(isStopped) in_flight=\(connectionAttemptInFlight)"
+      )
       return
     }
     connectionAttemptInFlight = true
+    diagnosticStore.record("connection attempt_started socket_path=\(socketPath)")
 
     guard let bundledCLIURL else {
       connectionAttemptFailed("Codex Desktop's bundled CLI was not found. Open Settings to run local integration diagnostics.")
@@ -193,6 +202,7 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
         DispatchQueue.main.async { self.connectionAttemptFailed("The bundled Codex CLI version could not be read.") }
         return
       }
+      self.diagnosticStore.record("connection cli_version=\(cliVersion)")
       guard DesktopDaemonCompatibilityAdapter.supports(cliVersion: cliVersion) else {
         DispatchQueue.main.async {
           self.connectionAttemptFailed("The bundled Codex CLI version is not supported. Beacon remains unavailable until a supported Desktop version is installed.")
@@ -205,6 +215,7 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
         }
         return
       }
+      self.diagnosticStore.record("connection socket_exists=true")
       guard let versions = Self.commandOutput(
         at: bundledCLIURL,
         arguments: ["app-server", "daemon", "version"]
@@ -215,6 +226,7 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
         }
         return
       }
+      self.diagnosticStore.record("connection daemon_versions_compatible=true")
       DispatchQueue.main.async {
         self.connectionAttemptInFlight = false
         guard !self.isStopped else { return }
@@ -225,6 +237,7 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
 
   private func connectionAttemptFailed(_ reason: String) {
     connectionAttemptInFlight = false
+    diagnosticStore.record("connection attempt_failed reason=\(reason)")
     fail(reason)
   }
 
@@ -232,6 +245,7 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
     guard !isStopped else { return }
     connectionGeneration += 1
     let generation = connectionGeneration
+    diagnosticStore.record("connection socket_connect generation=\(generation)")
     let client = UnixWebSocketClient(
       socketPath: socketPath,
       received: { [weak self] message in self?.received(message, from: generation) },
@@ -244,9 +258,15 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
   private func received(_ message: String, from generation: Int) {
     guard !isStopped, generation == connectionGeneration else { return }
     guard let object = try? JSONSerialization.jsonObject(with: Data(message.utf8)) as? [String: Any] else {
+      diagnosticStore.record("protocol receive_invalid_json generation=\(generation)")
       fail("The shared App Server sent invalid JSON.")
       return
     }
+
+    diagnosticStore.record(
+      "protocol received generation=\(generation) \(Self.protocolSummary(for: object))"
+    )
+    diagnosticStore.record("protocol payload=\(Self.singleLineJSON(message))")
 
     recordQuotaRefreshResponse(from: object)
 
@@ -256,6 +276,7 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
         return
       }
       didInitialize = true
+      diagnosticStore.record("connection passive_initialization_accepted")
       client?.send(["method": "initialized"])
       canRefreshQuota = true
       startQuotaRefreshTimer()
@@ -278,6 +299,7 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
     // A request from the server intentionally has no response. Beacon is an
     // observer and must not take ownership of Desktop approvals or input.
     if object["id"] != nil, object["method"] != nil {
+      diagnosticStore.record("protocol passive_observer_request_rejected")
       fail("The shared daemon sent this passive observer a request requiring a response. Monitoring stopped without responding.")
       return
     }
@@ -292,6 +314,7 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
       sawSharedDesktopRuntime = true
       reconnectBackoff.recordSuccessfulConnection()
       compatibilityAdapter.sharedRuntimeEvidenceObserved()
+      diagnosticStore.record("runtime shared_desktop_evidence_observed")
       hasSharedDesktopRuntime = true
     } else {
       hasSharedDesktopRuntime = false
@@ -307,6 +330,7 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
 
   private func connectionFailed(_ reason: String, from generation: Int) {
     guard !isStopped, generation == connectionGeneration else { return }
+    diagnosticStore.record("connection socket_failed generation=\(generation) reason=\(reason)")
     fail(reason)
   }
 
@@ -327,6 +351,9 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
       if request.method == "account/rateLimits/read" {
         recordQuotaRefreshRequest(request.id)
       }
+      diagnosticStore.record(
+        "protocol sent id=\(request.id) method=\(request.method) thread_id=\(request.threadID ?? "none")"
+      )
       client?.send(["id": request.id, "method": request.method, "params": params])
     }
   }
@@ -356,6 +383,7 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
       return
     }
     let delay = reconnectBackoff.nextDelayAfterFailure()
+    diagnosticStore.record("connection reconnect_scheduled delay_seconds=\(delay)")
     let workItem = DispatchWorkItem { [weak self] in
       guard let self else { return }
       self.retryWorkItem = nil
@@ -370,6 +398,7 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
       return
     }
     let timer = DispatchSource.makeTimerSource(queue: .main)
+    diagnosticStore.record("snapshot_timer started interval_seconds=2")
     timer.schedule(
       deadline: .now() + 2,
       repeating: 2,
@@ -379,6 +408,7 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
       guard let self, !self.isStopped else {
         return
       }
+      self.diagnosticStore.record("snapshot_timer fired")
       self.dispatch([.monitoringSnapshotRequested], flushesRequests: true)
     }
     snapshotTimer = timer
@@ -398,6 +428,7 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
       return
     }
     quotaRefreshInterval = interval
+    diagnosticStore.record("quota_refresh interval_changed status=\(status.traceName) seconds=\(interval)")
     guard canRefreshQuota else {
       return
     }
@@ -417,6 +448,7 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
       )
     }
     quotaRefreshRequests[requestID] = now
+    diagnosticStore.record("quota_refresh sent id=\(requestID)")
     Logger(subsystem: "com.codexbeacon", category: "quota-refresh").debug(
       "[quota-refresh] sent account/rateLimits/read id=\(requestID, privacy: .public)"
     )
@@ -449,6 +481,9 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
       return
     }
     consecutiveQuotaRefreshFailures = 0
+    diagnosticStore.record(
+      "quota_refresh received_success id=\(requestID) latency_ms=\(elapsedMilliseconds)"
+    )
     Logger(subsystem: "com.codexbeacon", category: "quota-refresh").debug(
       "[quota-refresh] received success id=\(requestID, privacy: .public) latency_ms=\(elapsedMilliseconds, privacy: .public)"
     )
@@ -473,6 +508,9 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
       guard let self, !self.isStopped else {
         return
       }
+      self.diagnosticStore.record(
+        "event dispatch events=\(events.map(\.traceDescription).joined(separator: ",")) flush_requests=\(flushesRequests)"
+      )
       events.forEach(self.deliver)
       if flushesRequests {
         self.flushRequests()
@@ -483,6 +521,74 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
   private static let defaultSocketPath =
     (FileManager.default.homeDirectoryForCurrentUser.path as NSString)
       .appendingPathComponent(".codex/app-server-control/app-server-control.sock")
+
+  private static func protocolSummary(for object: [String: Any]) -> String {
+    var fields: [String] = []
+    if let id = object["id"] {
+      fields.append("id=\(id)")
+    }
+    if let method = object["method"] as? String {
+      fields.append("method=\(method)")
+    }
+    if object["error"] != nil {
+      fields.append("error=true")
+    }
+
+    if let params = object["params"] as? [String: Any],
+      let threadID = params["threadId"] as? String
+    {
+      fields.append("thread_id=\(threadID)")
+      fields.append(contentsOf: threadStatusFields(params["status"]))
+    }
+
+    if let result = object["result"] as? [String: Any] {
+      if let threadIDs = result["data"] as? [String] {
+        fields.append("thread_ids=\(threadIDs.joined(separator: ","))")
+      }
+      if let thread = result["thread"] as? [String: Any] {
+        if let threadID = thread["id"] as? String {
+          fields.append("thread_id=\(threadID)")
+        }
+        if let source = thread["source"] {
+          fields.append("source=\(source)")
+        }
+        if let threadSource = thread["threadSource"] as? String {
+          fields.append("thread_source=\(threadSource)")
+        }
+        if let ephemeral = thread["ephemeral"] as? Bool {
+          fields.append("ephemeral=\(ephemeral)")
+        }
+        if let parentThreadID = thread["parentThreadId"] as? String {
+          fields.append("parent_thread_id=\(parentThreadID)")
+        }
+        fields.append(contentsOf: threadStatusFields(thread["status"]))
+      }
+      if result["rateLimits"] != nil {
+        fields.append("rate_limits=true")
+      }
+    }
+
+    return fields.isEmpty ? "kind=unclassified" : fields.joined(separator: " ")
+  }
+
+  private static func threadStatusFields(_ value: Any?) -> [String] {
+    guard let status = value as? [String: Any] else { return [] }
+    var fields: [String] = []
+    if let type = status["type"] as? String {
+      fields.append("status_type=\(type)")
+    }
+    if let flags = status["activeFlags"] as? [String] {
+      fields.append("active_flags=\(flags.joined(separator: ","))")
+    }
+    return fields
+  }
+
+  private static func singleLineJSON(_ message: String) -> String {
+    message
+      .replacingOccurrences(of: "\\", with: "\\\\")
+      .replacingOccurrences(of: "\n", with: "\\n")
+      .replacingOccurrences(of: "\r", with: "\\r")
+  }
 
   private static func findBundledCLI() -> URL? {
     let desktopURL = findDesktopApplication()
@@ -606,6 +712,39 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
     let bundle = Bundle(url: applicationURL)
     return bundle?.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
       ?? bundle?.object(forInfoDictionaryKey: "CFBundleVersion") as? String
+  }
+}
+
+private extension BeaconStatus {
+  var traceName: String {
+    switch self {
+    case .idle: "idle"
+    case .working: "working"
+    case .waitingForYou: "waiting_for_you"
+    case .completed: "completed"
+    case .monitoringUnavailable: "monitoring_unavailable"
+    }
+  }
+}
+
+private extension TaskEvent {
+  var traceDescription: String {
+    switch self {
+    case .monitoringConnectionEstablished(let protocolCompatible):
+      "monitoring_connection_established(protocol_compatible=\(protocolCompatible))"
+    case .monitoringRuntimeValidated:
+      "monitoring_runtime_validated"
+    case .monitoringConnectionFailed:
+      "monitoring_connection_failed"
+    case .monitoringObservationBecameStale:
+      "monitoring_observation_became_stale"
+    case .monitoringSnapshotRequested:
+      "monitoring_snapshot_requested"
+    case .quotaSnapshotRequested:
+      "quota_snapshot_requested"
+    case .appServerMessage:
+      "app_server_message"
+    }
   }
 }
 

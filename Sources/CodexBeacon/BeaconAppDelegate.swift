@@ -11,6 +11,7 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
   )
 
   private let preferencesStore = BeaconPreferencesStore()
+  private let diagnosticStore = LocalDiagnosticStore()
   private lazy var preferences = preferencesStore.load(fallbackHotKey: Self.defaultHotKey)
   private lazy var coordinator = AppCoordinator(
     requiresSharedRuntimeEvidence: true,
@@ -61,7 +62,8 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
     }
     taskMonitor = DesktopAppServerMonitor(
       deliver: { [weak self] event in self?.handleTaskEvent(event) },
-      requestsProvider: { [weak self] in self?.coordinator.drainAppServerRequests() ?? [] }
+      requestsProvider: { [weak self] in self?.coordinator.drainAppServerRequests() ?? [] },
+      diagnosticStore: diagnosticStore
     )
     installGlobalHotKeyEventHandler()
     let status = registerGlobalHotKey(preferences.hotKey)
@@ -87,8 +89,17 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
   }
 
   private func handleTaskEvent(_ event: TaskEvent) {
+    let statusBefore = coordinator.viewState.status
+    diagnosticStore.record(
+      "coordinator handling event=\(event.traceDescription) status_before=\(statusBefore.traceName)"
+    )
     coordinator.handle(.time(.advanced(to: Date())))
     coordinator.handle(.task(event))
+    let state = coordinator.viewState
+    let hoverDetail = state.hoverDetail
+    diagnosticStore.record(
+      "coordinator state_resolved status_after=\(state.status.traceName) working=\(hoverDetail?.workingCount ?? 0) waiting=\(hoverDetail?.waitingCount ?? 0) completed=\(hoverDetail?.completedCount ?? 0) visible=\(state.isVisible)"
+    )
     taskMonitor?.updateQuotaRefreshInterval(for: coordinator.viewState.status)
     updatePanelContent()
   }
@@ -172,7 +183,11 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
   }
 
   private func updatePanelContent() {
-    panel?.update(state: coordinator.viewState)
+    let state = coordinator.viewState
+    panel?.update(state: state)
+    diagnosticStore.record(
+      "ui panel_updated status=\(state.status.traceName) amber=\(state.lights[1].illumination.traceName) visible=\(state.isVisible)"
+    )
   }
 
   // MARK: - Global Hotkey
@@ -655,5 +670,47 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
 
   private func beaconRect(from frame: NSRect) -> BeaconRect {
     BeaconRect(x: frame.minX, y: frame.minY, width: frame.width, height: frame.height)
+  }
+}
+
+private extension BeaconStatus {
+  var traceName: String {
+    switch self {
+    case .idle: "idle"
+    case .working: "working"
+    case .waitingForYou: "waiting_for_you"
+    case .completed: "completed"
+    case .monitoringUnavailable: "monitoring_unavailable"
+    }
+  }
+}
+
+private extension BeaconLightIllumination {
+  var traceName: String {
+    switch self {
+    case .off: "off"
+    case .steady: "steady"
+    }
+  }
+}
+
+private extension TaskEvent {
+  var traceDescription: String {
+    switch self {
+    case .monitoringConnectionEstablished(let protocolCompatible):
+      "monitoring_connection_established(protocol_compatible=\(protocolCompatible))"
+    case .monitoringRuntimeValidated:
+      "monitoring_runtime_validated"
+    case .monitoringConnectionFailed:
+      "monitoring_connection_failed"
+    case .monitoringObservationBecameStale:
+      "monitoring_observation_became_stale"
+    case .monitoringSnapshotRequested:
+      "monitoring_snapshot_requested"
+    case .quotaSnapshotRequested:
+      "quota_snapshot_requested"
+    case .appServerMessage:
+      "app_server_message"
+    }
   }
 }
