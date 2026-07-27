@@ -21,6 +21,11 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
   private var client: UnixWebSocketClient?
   private var didInitialize = false
   private var sawSharedDesktopRuntime = false
+  private var reconnectBackoff = MonitoringReconnectBackoff()
+  private var retryWorkItem: DispatchWorkItem?
+  private var connectionAttemptInFlight = false
+  private var connectionGeneration = 0
+  private var isStopped = false
 
   private(set) var diagnostic = "Task monitoring has not started."
 
@@ -37,18 +42,40 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
   }
 
   func start() {
+    isStopped = false
+    attemptConnection()
+  }
+
+  func stop() {
+    isStopped = true
+    retryWorkItem?.cancel()
+    retryWorkItem = nil
+    connectionAttemptInFlight = false
+    connectionGeneration += 1
+    client?.close()
+    client = nil
+    didInitialize = false
+    sawSharedDesktopRuntime = false
+  }
+
+  private func attemptConnection() {
+    guard !isStopped, !connectionAttemptInFlight else {
+      return
+    }
+    connectionAttemptInFlight = true
+
     guard let bundledCLIURL else {
-      fail("Codex Desktop's bundled CLI was not found.")
+      connectionAttemptFailed("Codex Desktop's bundled CLI was not found.")
       return
     }
     guard FileManager.default.isExecutableFile(atPath: bundledCLIURL.path) else {
-      fail("Codex Desktop's bundled CLI is not executable.")
+      connectionAttemptFailed("Codex Desktop's bundled CLI is not executable.")
       return
     }
     DispatchQueue.global(qos: .userInitiated).async { [weak self] in
       guard let self else { return }
       guard let cliVersion = Self.cliVersion(at: bundledCLIURL) else {
-        DispatchQueue.main.async { self.fail("The bundled Codex CLI version could not be read.") }
+        DispatchQueue.main.async { self.connectionAttemptFailed("The bundled Codex CLI version could not be read.") }
         return
       }
       guard FileManager.default.fileExists(atPath: self.socketPath) else {
@@ -57,7 +84,7 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
           cliVersion: cliVersion
         )
         DispatchQueue.main.async {
-          self.fail(adoptionFailure ?? "The shared daemon was prepared. Fully quit and reopen Codex Desktop, then reopen Codex Beacon to validate runtime sharing.")
+          self.connectionAttemptFailed(adoptionFailure ?? "The shared daemon was prepared. Fully quit and reopen Codex Desktop; Beacon will reconnect automatically when shared runtime state is available.")
         }
         return
       }
@@ -71,34 +98,38 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
           cliVersion: cliVersion
         )
         DispatchQueue.main.async {
-          self.fail(adoptionFailure ?? "The shared daemon was prepared after its existing control socket failed validation. Fully quit and reopen Codex Desktop, then reopen Codex Beacon to validate runtime sharing.")
+          self.connectionAttemptFailed(adoptionFailure ?? "The shared daemon was prepared after its existing control socket failed validation. Fully quit and reopen Codex Desktop; Beacon will reconnect automatically when shared runtime state is available.")
         }
         return
       }
       DispatchQueue.main.async {
+        self.connectionAttemptInFlight = false
+        guard !self.isStopped else { return }
         self.connect()
       }
     }
   }
 
-  func stop() {
-    client?.close()
-    client = nil
-    didInitialize = false
-    sawSharedDesktopRuntime = false
+  private func connectionAttemptFailed(_ reason: String) {
+    connectionAttemptInFlight = false
+    fail(reason)
   }
 
   private func connect() {
+    guard !isStopped else { return }
+    connectionGeneration += 1
+    let generation = connectionGeneration
     let client = UnixWebSocketClient(
       socketPath: socketPath,
-      received: { [weak self] message in self?.received(message) },
-      failed: { [weak self] message in self?.fail(message) }
+      received: { [weak self] message in self?.received(message, from: generation) },
+      failed: { [weak self] message in self?.connectionFailed(message, from: generation) }
     )
     self.client = client
     client.connect()
   }
 
-  private func received(_ message: String) {
+  private func received(_ message: String, from generation: Int) {
+    guard !isStopped, generation == connectionGeneration else { return }
     guard let object = try? JSONSerialization.jsonObject(with: Data(message.utf8)) as? [String: Any] else {
       fail("The shared App Server sent invalid JSON.")
       return
@@ -114,7 +145,12 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
       deliver(.monitoringConnectionEstablished(protocolCompatible: true))
       flushRequests()
       DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
-        guard let self, self.didInitialize, !self.sawSharedDesktopRuntime else { return }
+        guard
+          let self,
+          generation == self.connectionGeneration,
+          self.didInitialize,
+          !self.sawSharedDesktopRuntime
+        else { return }
         self.fail("No loaded Codex Desktop runtime thread was observed. The reachable daemon is not accepted as shared Desktop state.")
       }
       return
@@ -135,6 +171,7 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
       thread["parentThreadId"] == nil || thread["parentThreadId"] is NSNull
     {
       sawSharedDesktopRuntime = true
+      reconnectBackoff.recordSuccessfulConnection()
       compatibilityAdapter.sharedRuntimeEvidenceObserved()
       hasSharedDesktopRuntime = true
     } else {
@@ -146,6 +183,11 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
       deliver(.monitoringRuntimeValidated)
     }
     flushRequests()
+  }
+
+  private func connectionFailed(_ reason: String, from generation: Int) {
+    guard !isStopped, generation == connectionGeneration else { return }
+    fail(reason)
   }
 
   private func flushRequests() {
@@ -167,12 +209,31 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
   }
 
   private func fail(_ reason: String) {
+    guard !isStopped else { return }
+    connectionGeneration += 1
     diagnostic = reason
     diagnosticStore.record(reason)
     Logger(subsystem: "com.codexbeacon", category: "task-monitoring").error("\(reason, privacy: .public)")
     client?.close()
     client = nil
+    didInitialize = false
+    sawSharedDesktopRuntime = false
     deliver(.monitoringConnectionFailed)
+    scheduleReconnect()
+  }
+
+  private func scheduleReconnect() {
+    guard !isStopped, retryWorkItem == nil else {
+      return
+    }
+    let delay = reconnectBackoff.nextDelayAfterFailure()
+    let workItem = DispatchWorkItem { [weak self] in
+      guard let self else { return }
+      self.retryWorkItem = nil
+      self.attemptConnection()
+    }
+    retryWorkItem = workItem
+    DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
   }
 
   private static let defaultSocketPath =

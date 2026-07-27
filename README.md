@@ -27,8 +27,8 @@ icon nor a menu bar item.
 Beacon uses the tested, version-gated Desktop shared-daemon compatibility path
 only when the shared socket is unavailable. It starts no independent observer
 daemon. After Beacon reports that the adapter is prepared, fully quit and
-reopen Codex Desktop, then reopen Beacon; a loaded `vscode` Desktop thread is
-required before monitoring becomes available. Local diagnostics are stored at:
+reopen Codex Desktop; Beacon stays open and reconnects automatically when it
+observes a loaded `vscode` Desktop thread. Local diagnostics are stored at:
 
 ```text
 ~/Library/Application Support/CodexBeacon/task-monitoring-diagnostic.txt

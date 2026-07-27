@@ -102,7 +102,7 @@ struct AppServerTaskStateScenarioTests {
           #""source":"vscode","threadSource":"system","ephemeral":false,"parentThreadId":null"#
       case "child":
         classification =
-          #""source":"subAgent","ephemeral":false,"parentThreadId":"visible-idle""#
+          #""source":{"subAgent":{"thread_spawn":{"parent_thread_id":"visible-idle"}}},"ephemeral":false,"parentThreadId":"visible-idle""#
       default:
         Issue.record("unexpected thread read request")
         continue

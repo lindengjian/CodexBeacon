@@ -5,6 +5,47 @@ import Testing
 
 @MainActor
 struct CoordinatorEventScenarioTests {
+  @Test("shared runtime validation presents the loaded Desktop working task")
+  func sharedRuntimeValidationPresentsLoadedWorkingTask() {
+    let coordinator = AppCoordinator(requiresSharedRuntimeEvidence: true)
+
+    coordinator.handle(.task(.monitoringConnectionEstablished(protocolCompatible: true)))
+    let loadedRequest = coordinator.drainAppServerRequests().first!
+    coordinator.handle(
+      .task(.appServerMessage("""
+        {"id":\(loadedRequest.id),"result":{"data":["desktop-thread"]}}
+        """))
+    )
+    let readRequest = coordinator.drainAppServerRequests().first!
+    coordinator.handle(
+      .task(.appServerMessage("""
+        {"id":\(readRequest.id),"result":{"thread":{"id":"desktop-thread","source":"vscode","ephemeral":false,"parentThreadId":null,"status":{"type":"active","activeFlags":[]}}}}
+        """))
+    )
+
+    #expect(coordinator.viewState.status == .monitoringUnavailable)
+
+    coordinator.handle(.task(.monitoringRuntimeValidated))
+
+    #expect(coordinator.viewState.status == .working)
+    #expect(coordinator.viewState.lights[1].illumination == .steady)
+  }
+
+  @Test("monitor reconnect retries use bounded backoff and reset after recovery")
+  func monitoringReconnectBackoffResetsAfterRecovery() {
+    var backoff = MonitoringReconnectBackoff()
+
+    #expect(backoff.nextDelayAfterFailure() == 2)
+    #expect(backoff.nextDelayAfterFailure() == 5)
+    #expect(backoff.nextDelayAfterFailure() == 15)
+    #expect(backoff.nextDelayAfterFailure() == 30)
+    #expect(backoff.nextDelayAfterFailure() == 30)
+
+    backoff.recordSuccessfulConnection()
+
+    #expect(backoff.nextDelayAfterFailure() == 2)
+  }
+
   @Test("task, time, and system events are injectable at the application seam")
   func applicationEventsUpdatePublicStateAndEffects() {
     let coordinator = AppCoordinator()
