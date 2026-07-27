@@ -441,11 +441,35 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
         guard let self else { return }
         self.preferences.launchesAtLogin = enabled
         self.preferencesStore.save(self.preferences)
+      },
+      exportDiagnosticLog: { [weak self] in
+        self?.exportDiagnosticLog() ?? .failed("Beacon 已退出，无法导出日志。")
       }
     )
     integrationSettingsModel = model
     model.refresh()
     return model
+  }
+
+  private func exportDiagnosticLog() -> DiagnosticLogExportResult {
+    let panel = NSOpenPanel()
+    panel.title = "导出诊断日志"
+    panel.message = "选择用于保存诊断日志副本的文件夹。"
+    panel.prompt = "导出到此处"
+    panel.canChooseFiles = false
+    panel.canChooseDirectories = true
+    panel.canCreateDirectories = true
+    panel.allowsMultipleSelection = false
+
+    guard panel.runModal() == .OK, let directory = panel.url else {
+      return .cancelled
+    }
+
+    do {
+      return .exported(try diagnosticStore.export(to: directory))
+    } catch {
+      return .failed(error.localizedDescription)
+    }
   }
 
   private func diagnoseIntegration(

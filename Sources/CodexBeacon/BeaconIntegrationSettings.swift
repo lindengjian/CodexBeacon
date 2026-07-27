@@ -15,12 +15,19 @@ struct DesktopIntegrationDiagnostic: Equatable, Sendable {
   let instructions: String
 }
 
+enum DiagnosticLogExportResult: Equatable {
+  case exported(URL)
+  case cancelled
+  case failed(String)
+}
+
 @MainActor
 final class BeaconIntegrationSettingsModel: ObservableObject {
   @Published var launchesAtLogin: Bool
   @Published private(set) var notificationStatus: String
   @Published private(set) var diagnostic: DesktopIntegrationDiagnostic
   @Published private(set) var isWorking = false
+  @Published private(set) var diagnosticLogExportStatus: String?
 
   private let setLaunchAtLogin: (Bool) -> String?
   private let requestNotificationPermission: (@escaping @MainActor @Sendable (String) -> Void) -> Void
@@ -29,6 +36,7 @@ final class BeaconIntegrationSettingsModel: ObservableObject {
   private let repair: (@escaping @MainActor @Sendable (DesktopIntegrationDiagnostic) -> Void) -> Void
   private let restoreDefaultIntegration: (@escaping @MainActor @Sendable (DesktopIntegrationDiagnostic) -> Void) -> Void
   private let persistLaunchAtLogin: (Bool) -> Void
+  private let exportDiagnosticLogAction: () -> DiagnosticLogExportResult
 
   init(
     launchesAtLogin: Bool,
@@ -40,7 +48,10 @@ final class BeaconIntegrationSettingsModel: ObservableObject {
     diagnose: @escaping (@escaping @MainActor @Sendable (DesktopIntegrationDiagnostic) -> Void) -> Void,
     repair: @escaping (@escaping @MainActor @Sendable (DesktopIntegrationDiagnostic) -> Void) -> Void,
     restoreDefaultIntegration: @escaping (@escaping @MainActor @Sendable (DesktopIntegrationDiagnostic) -> Void) -> Void,
-    persistLaunchAtLogin: @escaping (Bool) -> Void
+    persistLaunchAtLogin: @escaping (Bool) -> Void,
+    exportDiagnosticLog: @escaping () -> DiagnosticLogExportResult = {
+      .failed("日志导出当前不可用。")
+    }
   ) {
     self.launchesAtLogin = launchesAtLogin
     self.notificationStatus = notificationStatus
@@ -52,6 +63,7 @@ final class BeaconIntegrationSettingsModel: ObservableObject {
     self.repair = repair
     self.restoreDefaultIntegration = restoreDefaultIntegration
     self.persistLaunchAtLogin = persistLaunchAtLogin
+    exportDiagnosticLogAction = exportDiagnosticLog
   }
 
   func updateLaunchAtLogin(_ enabled: Bool) {
@@ -97,6 +109,17 @@ final class BeaconIntegrationSettingsModel: ObservableObject {
       self?.isWorking = false
     }
   }
+
+  func exportDiagnosticLog() {
+    switch exportDiagnosticLogAction() {
+    case .exported(let url):
+      diagnosticLogExportStatus = "已导出到：\(url.path)"
+    case .cancelled:
+      diagnosticLogExportStatus = nil
+    case .failed(let message):
+      diagnosticLogExportStatus = "导出失败：\(message)"
+    }
+  }
 }
 
 struct BeaconIntegrationSettingsSection: View {
@@ -134,6 +157,20 @@ struct BeaconIntegrationSettingsSection: View {
           Button("恢复默认 Desktop 集成") { model.restoreDefaultDesktopIntegration() }
         }
         .disabled(model.isWorking)
+      }
+
+      VStack(alignment: .leading, spacing: 4) {
+        Button("导出诊断日志") { model.exportDiagnosticLog() }
+          .disabled(model.isWorking)
+        Text("导出的副本包含本次运行的任务状态与协议诊断信息。")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+        if let status = model.diagnosticLogExportStatus {
+          Text(status)
+            .font(.caption)
+            .foregroundStyle(status.hasPrefix("导出失败") ? .red : .secondary)
+            .textSelection(.enabled)
+        }
       }
     }
   }

@@ -29,4 +29,27 @@ struct LocalDiagnosticStoreTests {
         < trace.range(of: "status_after=working")!.lowerBound
     )
   }
+
+  @Test("a diagnostic log can be copied to a user-selected folder without replacing existing exports")
+  func exportsDiagnosticLogToSelectedDirectory() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("CodexBeaconTests-\(UUID().uuidString)")
+    let sourceDirectory = root.appendingPathComponent("source")
+    let exportDirectory = root.appendingPathComponent("exports")
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let store = LocalDiagnosticStore(directory: sourceDirectory)
+    store.beginRun(runID: "export-test")
+    store.record("coordinator state_resolved status_after=working")
+    try FileManager.default.createDirectory(at: exportDirectory, withIntermediateDirectories: true)
+
+    let firstExport = try store.export(to: exportDirectory)
+    let secondExport = try store.export(to: exportDirectory)
+
+    #expect(firstExport.deletingLastPathComponent().path == exportDirectory.path)
+    #expect(secondExport.deletingLastPathComponent().path == exportDirectory.path)
+    #expect(firstExport != secondExport)
+    #expect(try String(contentsOf: firstExport, encoding: .utf8).contains("run_id=export-test"))
+    #expect(try String(contentsOf: secondExport, encoding: .utf8).contains("status_after=working"))
+  }
 }

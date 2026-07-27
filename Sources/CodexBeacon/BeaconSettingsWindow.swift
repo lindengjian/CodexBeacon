@@ -7,7 +7,7 @@ import SwiftUI
 final class BeaconSettingsWindowController: NSWindowController {
   init(rootView: BeaconSettingsView) {
     let window = NSWindow(
-      contentRect: NSRect(x: 0, y: 0, width: 460, height: 510),
+      contentRect: NSRect(x: 0, y: 0, width: 460, height: 590),
       styleMask: [.titled, .closable],
       backing: .buffered,
       defer: false

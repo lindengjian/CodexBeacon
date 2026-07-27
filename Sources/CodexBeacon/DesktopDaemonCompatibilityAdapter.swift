@@ -223,7 +223,61 @@ final class LocalDiagnosticStore {
     }
   }
 
+  /// Copies the current trace into a user-selected directory. The timestamped
+  /// filename, with a numeric suffix if necessary, preserves prior exports.
+  func export(to destinationDirectory: URL, at date: Date = Date()) throws -> URL {
+    Self.writeLock.lock()
+    defer { Self.writeLock.unlock() }
+
+    guard FileManager.default.fileExists(atPath: fileURL.path) else {
+      throw DiagnosticLogExportError.logUnavailable
+    }
+
+    var isDirectory: ObjCBool = false
+    guard FileManager.default.fileExists(
+      atPath: destinationDirectory.path,
+      isDirectory: &isDirectory
+    ), isDirectory.boolValue else {
+      throw DiagnosticLogExportError.destinationIsNotDirectory
+    }
+
+    let baseName = "CodexBeacon-diagnostic-\(exportTimestamp(for: date))"
+    var sequence = 1
+    var destinationURL = destinationDirectory
+      .appendingPathComponent("\(baseName).txt")
+    while FileManager.default.fileExists(atPath: destinationURL.path) {
+      sequence += 1
+      destinationURL = destinationDirectory
+        .appendingPathComponent("\(baseName)-\(sequence).txt")
+    }
+
+    try FileManager.default.copyItem(at: fileURL, to: destinationURL)
+    return destinationURL
+  }
+
   private func timestamp(for date: Date) -> String {
     ISO8601DateFormatter().string(from: date)
+  }
+
+  private func exportTimestamp(for date: Date) -> String {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.timeZone = TimeZone(secondsFromGMT: 0)
+    formatter.dateFormat = "yyyyMMdd-HHmmss"
+    return formatter.string(from: date)
+  }
+}
+
+private enum DiagnosticLogExportError: LocalizedError {
+  case logUnavailable
+  case destinationIsNotDirectory
+
+  var errorDescription: String? {
+    switch self {
+    case .logUnavailable:
+      "当前没有可导出的诊断日志。请先启动 Beacon 并复现问题。"
+    case .destinationIsNotDirectory:
+      "请选择一个用于保存日志的文件夹。"
+    }
   }
 }

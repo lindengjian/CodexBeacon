@@ -58,6 +58,7 @@ struct BeaconSettingsScenarioTests {
   @Test("settings can persist a changed launch-at-login choice and refresh local diagnostics")
   func integrationSettingsRefreshesDiagnosticsAndPersistsLoginChoice() {
     var persistedLaunchAtLogin: Bool?
+    let exportURL = URL(fileURLWithPath: "/tmp/CodexBeacon-diagnostic.txt")
     let diagnostic = DesktopIntegrationDiagnostic(
       health: .ready,
       summary: "兼容",
@@ -73,15 +74,18 @@ struct BeaconSettingsScenarioTests {
       diagnose: { completion in completion(diagnostic) },
       repair: { completion in completion(diagnostic) },
       restoreDefaultIntegration: { completion in completion(diagnostic) },
-      persistLaunchAtLogin: { persistedLaunchAtLogin = $0 }
+      persistLaunchAtLogin: { persistedLaunchAtLogin = $0 },
+      exportDiagnosticLog: { .exported(exportURL) }
     )
 
     settings.updateLaunchAtLogin(false)
     settings.refresh()
+    settings.exportDiagnosticLog()
 
     #expect(!settings.launchesAtLogin)
     #expect(persistedLaunchAtLogin == false)
     #expect(settings.diagnostic == diagnostic)
+    #expect(settings.diagnosticLogExportStatus == "已导出到：\(exportURL.path)")
   }
 
   @Test("settings size selection updates the actual Beacon panel and its global hotkey still toggles visibility")
