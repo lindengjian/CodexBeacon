@@ -297,6 +297,12 @@ private struct QuotaTrack: View {
 struct HoverDetailView: View {
   let detail: HoverDetailState
 
+  private static let dateFormatter: DateFormatter = {
+    let formatter = DateFormatter()
+    formatter.dateFormat = "M/d HH:mm"
+    return formatter
+  }()
+
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
       statusHeader
@@ -315,7 +321,7 @@ struct HoverDetailView: View {
       }
 
       if let lastUpdated = detail.lastUpdatedAt {
-        Text("更新于 \(lastUpdated.formatted(date: .abbreviated, time: .shortened))")
+        Text("更新于 \(Self.dateFormatter.string(from: lastUpdated))")
           .font(.system(size: 10))
           .foregroundStyle(.secondary)
       }
