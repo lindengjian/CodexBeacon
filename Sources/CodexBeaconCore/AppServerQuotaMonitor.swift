@@ -91,7 +91,7 @@ struct AppServerQuotaMonitor {
       return false
     }
     windows.removeAll()
-    for (key, entry) in response.result.rateLimits {
+    for (key, entry) in response.result.rateLimits.windows {
       windows[key] = window(from: entry, key: key, previous: nil)
     }
     state = .available
@@ -123,10 +123,13 @@ struct AppServerQuotaMonitor {
   ) -> QuotaWindow {
     let resetAt = entry.resetAt.flatMap {
       ISO8601DateFormatter().date(from: $0)
-    } ?? previous?.resetAt
+    } ?? entry.resetsAt.map(Date.init(timeIntervalSince1970:)) ?? previous?.resetAt
     return QuotaWindow(
       windowKey: key,
-      durationSeconds: entry.durationSeconds ?? previous?.durationSeconds ?? 0,
+      durationSeconds: entry.durationSeconds
+        ?? entry.windowDurationMins.map { $0 * 60 }
+        ?? previous?.durationSeconds
+        ?? 0,
       usedPercentage: entry.usedPercent ?? previous?.usedPercentage ?? 0,
       resetAt: resetAt
     )
@@ -155,7 +158,44 @@ private struct RateLimitsResponse: Decodable {
 }
 
 private struct RateLimitsResult: Decodable {
-  let rateLimits: [String: RateLimitEntry]
+  let rateLimits: RateLimitsPayload
+}
+
+private enum RateLimitsPayload: Decodable {
+  case legacy([String: RateLimitEntry])
+  case bucket(RateLimitBucket)
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    if let legacy = try? container.decode([String: RateLimitEntry].self) {
+      self = .legacy(legacy)
+    } else {
+      self = .bucket(try container.decode(RateLimitBucket.self))
+    }
+  }
+
+  var windows: [String: RateLimitEntry] {
+    switch self {
+    case .legacy(let windows):
+      windows
+    case .bucket(let bucket):
+      bucket.windows
+    }
+  }
+}
+
+private struct RateLimitBucket: Decodable {
+  let limitId: String?
+  let primary: RateLimitEntry?
+  let secondary: RateLimitEntry?
+
+  var windows: [String: RateLimitEntry] {
+    let prefix = limitId ?? "default"
+    return [
+      "\(prefix).primary": primary,
+      "\(prefix).secondary": secondary,
+    ].compactMapValues { $0 }
+  }
 }
 
 private struct RateLimitsNotification: Decodable {
@@ -170,4 +210,6 @@ private struct RateLimitEntry: Decodable {
   let durationSeconds: TimeInterval?
   let usedPercent: Double?
   let resetAt: String?
+  let windowDurationMins: TimeInterval?
+  let resetsAt: TimeInterval?
 }

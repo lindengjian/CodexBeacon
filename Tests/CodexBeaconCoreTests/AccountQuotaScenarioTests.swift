@@ -33,6 +33,49 @@ struct AccountQuotaScenarioTests {
     #expect(coordinator.viewState.status == .monitoringUnavailable)
   }
 
+  @Test("current App Server snapshot renders its primary quota window")
+  func currentAppServerSnapshotRendersPrimaryQuotaWindow() {
+    let coordinator = AppCoordinator()
+
+    coordinator.handle(
+      .task(.monitoringConnectionEstablished(protocolCompatible: true)))
+    let snapshotRequest = coordinator.drainAppServerRequests().last
+
+    coordinator.handle(
+      .task(
+        .appServerMessage("""
+          {"id":\(snapshotRequest!.id),"result":{"rateLimits":{"limitId":"codex","primary":{"usedPercent":18,"windowDurationMins":10080,"resetsAt":1785719724},"secondary":null},"rateLimitsByLimitId":{"codex":{"limitId":"codex","primary":{"usedPercent":18,"windowDurationMins":10080,"resetsAt":1785719724},"secondary":null}}}}
+          """))
+    )
+
+    let quota = coordinator.viewState.quotaTrack
+    #expect(quota.style == .gauge)
+    #expect(quota.detailWindows.count == 1)
+    #expect(quota.detailWindows.first?.durationSeconds == 604_800)
+    #expect(abs(quota.fillFraction - 0.82) < 0.01)
+  }
+
+  @Test("current App Server snapshot selects the shortest primary or secondary window")
+  func currentAppServerSnapshotSelectsShortestWindow() {
+    let coordinator = AppCoordinator()
+
+    coordinator.handle(
+      .task(.monitoringConnectionEstablished(protocolCompatible: true)))
+    let snapshotRequest = coordinator.drainAppServerRequests().last
+
+    coordinator.handle(
+      .task(
+        .appServerMessage("""
+          {"id":\(snapshotRequest!.id),"result":{"rateLimits":{"limitId":"codex","primary":{"usedPercent":18,"windowDurationMins":10080,"resetsAt":1785719724},"secondary":{"usedPercent":60,"windowDurationMins":300,"resetsAt":1785137724}}}}
+          """))
+    )
+
+    let quota = coordinator.viewState.quotaTrack
+    #expect(quota.style == .gauge)
+    #expect(quota.detailWindows.count == 2)
+    #expect(abs(quota.fillFraction - 0.4) < 0.01)
+  }
+
   @Test("sparse update preserves field values from previous state for unchanged windows")
   func sparseUpdatePreservesFieldsFromPreviousState() {
     let coordinator = AppCoordinator()

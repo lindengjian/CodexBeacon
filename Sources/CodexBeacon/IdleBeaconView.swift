@@ -25,7 +25,7 @@ struct IdleBeaconView: View {
           Spacer(minLength: 4)
           QuotaTrack(state: state.quotaTrack, orientation: .vertical)
         }
-        .padding(.horizontal, 13)
+        .padding(.horizontal, 11)
         .padding(.top, 22)
         .padding(.bottom, 19)
       } else {
@@ -34,7 +34,7 @@ struct IdleBeaconView: View {
           Spacer(minLength: 4)
           QuotaTrack(state: state.quotaTrack, orientation: .horizontal)
         }
-        .padding(.vertical, 13)
+        .padding(.vertical, 8)
         .padding(.leading, 19)
         .padding(.trailing, 22)
       }
@@ -154,59 +154,55 @@ private struct LightRecess: View {
 private struct QuotaTrack: View {
   let state: QuotaTrackState
   let orientation: BeaconOrientation
-  @State private var isHovering = false
 
+  private var ringDiameter: Double { isVertical ? 36 : 32 }
+  private var ringLineWidth: Double { isVertical ? 5 : 4 }
   private var isVertical: Bool { orientation == .vertical }
-  private var trackWidth: Double { isVertical ? 8 : 52 }
-  private var trackHeight: Double { isVertical ? 52 : 8 }
 
   var body: some View {
-    ZStack {
-      if state.style == .dashed {
-        dashedTrack
+    Group {
+      if state.style == .gauge, let selectedWindow {
+        VStack(spacing: isVertical ? 4 : 3) {
+          if let resetText = resetText(for: selectedWindow) {
+            resetReadout(resetText)
+          }
+          gaugeRing(remainingText(for: selectedWindow))
+        }
       } else {
-        filledTrack
+        inactiveRing
       }
     }
-    .onHover { hovering in
-      isHovering = hovering && state.style == .gauge && !state.detailWindows.isEmpty
-    }
-    .overlay(alignment: .top) {
-      if isHovering {
-        detailPopover
-          .offset(y: -8)
-      }
-    }
+    .allowsHitTesting(false)
   }
 
-  private var filledTrack: some View {
-    ZStack(alignment: isVertical ? .bottom : .leading) {
-      Capsule()
-        .fill(trackBackgroundColor)
-      if state.style == .gauge {
-        Capsule()
-          .fill(gaugeFillColor)
-          .frame(
-            width: isVertical ? trackWidth : trackWidth * state.fillFraction,
-            height: isVertical ? trackHeight * state.fillFraction : trackHeight
-          )
-      }
+  private func gaugeRing(_ percentage: String) -> some View {
+    ZStack {
+      Circle()
+        .stroke(trackBackgroundColor, lineWidth: ringLineWidth)
+
+      Circle()
+        .trim(from: 0, to: state.fillFraction)
+        .stroke(
+          gaugeFillColor,
+          style: StrokeStyle(lineWidth: ringLineWidth, lineCap: .round)
+        )
+        .rotationEffect(.degrees(-90))
+
+      Text(percentage)
+        .font(.system(size: isVertical ? 11 : 10, weight: .semibold, design: .rounded))
+        .foregroundStyle(.white.opacity(0.84))
+        .monospacedDigit()
     }
-    .frame(width: trackWidth, height: trackHeight)
-    .clipShape(Capsule())
-    .overlay {
-      Capsule()
-        .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
-    }
+    .frame(width: ringDiameter, height: ringDiameter)
   }
 
-  private var dashedTrack: some View {
-    Capsule()
+  private var inactiveRing: some View {
+    Circle()
       .strokeBorder(
-        Color.white.opacity(0.13),
-        style: StrokeStyle(lineWidth: 1, dash: [4, 4])
+        inactiveRingColor,
+        style: inactiveRingStyle
       )
-      .frame(width: trackWidth, height: trackHeight)
+      .frame(width: ringDiameter, height: ringDiameter)
   }
 
   private var gaugeFillColor: Color {
@@ -231,68 +227,49 @@ private struct QuotaTrack: View {
     }
   }
 
-  private var detailPopover: some View {
-    VStack(alignment: .leading, spacing: 4) {
-      ForEach(state.detailWindows, id: \.windowKey) { window in
-        HStack {
-          Text(displayName(for: window))
-            .font(.system(size: 9, weight: .medium))
-            .foregroundColor(.white.opacity(0.8))
-          Spacer()
-          Text(percentageText(for: window))
-            .font(.system(size: 9, weight: .semibold))
-            .foregroundColor(.white.opacity(0.9))
-            .monospacedDigit()
-        }
-        if let resetText = resetText(for: window) {
-          Text(resetText)
-            .font(.system(size: 8))
-            .foregroundColor(.white.opacity(0.4))
-        }
-        if window.windowKey != state.detailWindows.last?.windowKey {
-          Divider()
-            .background(Color.white.opacity(0.1))
-        }
-      }
+  private var inactiveRingColor: Color {
+    switch state.style {
+    case .dashed:
+      Color.white.opacity(0.13)
+    case .neutral:
+      Color.white.opacity(0.12)
+    case .gauge:
+      trackBackgroundColor
     }
-    .padding(.horizontal, 10)
-    .padding(.vertical, 8)
-    .background(
-      RoundedRectangle(cornerRadius: 8, style: .continuous)
-        .fill(Color(red: 0.08, green: 0.08, blue: 0.10))
-    )
-    .overlay {
-      RoundedRectangle(cornerRadius: 8, style: .continuous)
-        .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
-    }
-    .frame(minWidth: 160)
-    .fixedSize()
   }
 
-  private func displayName(for window: QuotaWindow) -> String {
-    let hours = window.durationSeconds / 3600
-    if hours >= 24 {
-      let days = Int(hours / 24)
-      return "\(days)d window"
+  private var inactiveRingStyle: StrokeStyle {
+    switch state.style {
+    case .dashed:
+      StrokeStyle(lineWidth: 1, dash: [4, 4])
+    case .neutral, .gauge:
+      StrokeStyle(lineWidth: ringLineWidth)
     }
-    if hours >= 1 {
-      if hours == floor(hours) {
-        return "\(Int(hours))h window"
-      }
-      return String(format: "%.1fh window", hours)
-    }
-    let minutes = Int(window.durationSeconds / 60)
-    return "\(minutes)m window"
   }
 
-  private func percentageText(for window: QuotaWindow) -> String {
+  private var selectedWindow: QuotaWindow? {
+    state.detailWindows
+      .filter { $0.durationSeconds > 0 }
+      .min { $0.durationSeconds < $1.durationSeconds }
+  }
+
+  private func resetReadout(_ text: String) -> some View {
+    Text(text)
+      .font(.system(size: 7, weight: .medium, design: .rounded))
+      .foregroundStyle(.white.opacity(0.56))
+      .monospacedDigit()
+      .fixedSize()
+  }
+
+  private func remainingText(for window: QuotaWindow) -> String {
     String(format: "%.0f%%", window.remainingPercentage)
   }
 
   private func resetText(for window: QuotaWindow) -> String? {
     guard let resetAt = window.resetAt else { return nil }
     let formatter = DateFormatter()
-    formatter.dateFormat = "MMM d, HH:mm"
-    return "resets \(formatter.string(from: resetAt))"
+    formatter.dateFormat = "M/d HH:mm"
+    return formatter.string(from: resetAt)
   }
+
 }
