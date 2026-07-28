@@ -23,6 +23,7 @@ public final class AppCoordinator {
   private var displayLayout: BeaconDisplayLayout?
   private var beaconAnchor: BeaconAnchor?
   private var showTaskTitles: Bool
+  private var hasPendingCompletionSoundEvent = false
 
   public var autoConfirmCondition: (() -> Bool)?
 
@@ -127,6 +128,9 @@ public final class AppCoordinator {
       }
       let newCompletions = taskMonitor.unconfirmedCompletionTaskIDs.subtracting(
         completionsBefore)
+      if !newCompletions.isEmpty {
+        hasPendingCompletionSoundEvent = true
+      }
       if !newCompletions.isEmpty,
         let policy = autoConfirmCondition,
         sharedRuntimeValidated,
@@ -198,6 +202,14 @@ public final class AppCoordinator {
 
   public func drainAppServerRequests() -> [AppServerRequest] {
     taskMonitor.drainRequests() + quotaMonitor.drainRequests()
+  }
+
+  /// Returns whether a successful completion was created since the previous
+  /// drain. This survives automatic visual confirmation, so an enabled
+  /// completion sound is not lost when Codex is already frontmost.
+  public func drainCompletionSoundEvent() -> Bool {
+    defer { hasPendingCompletionSoundEvent = false }
+    return hasPendingCompletionSoundEvent
   }
 
   /// Drains pending reset events from the view state. The caller (app

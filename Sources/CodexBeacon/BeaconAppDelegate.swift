@@ -23,6 +23,7 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
   private var taskMonitor: DesktopAppServerMonitor?
   private var screenParametersObserver: NSObjectProtocol?
   private var frontmostAppObserver: NSObjectProtocol?
+  private var accessibilityDisplayOptionsObserver: NSObjectProtocol?
   private var codexBundleID = "com.anthropic.codex"
   private var hotKeyReference: EventHotKeyRef?
   private var hotKeyEventHandlerReference: EventHandlerRef?
@@ -31,8 +32,16 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
   private var integrationSettingsModel: BeaconIntegrationSettingsModel?
   private var hotKeyRegistrationError: String?
   private var hasStartedMonitoring = false
+  private var eventSoundTracker = BeaconEventSoundTracker()
   private lazy var resetNotificationManager = ResetNotificationManager(
-    diagnosticStore: diagnosticStore
+    diagnosticStore: diagnosticStore,
+    quotaResetSoundSetting: { [weak self] in
+      self?.preferences.soundPreferences[.quotaReset]
+        ?? .init(isEnabled: true, soundName: "Ping")
+    },
+    onDelivery: { [weak self] message in
+      self?.presentResetDelivery(message)
+    }
   )
 
   func applicationDidFinishLaunching(_ notification: Notification) {
@@ -41,6 +50,7 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
       self?.canAutoConfirmCompletion() ?? false
     }
     present(coordinator.viewState)
+    updateReduceMotion()
     perform(coordinator.drainEffects())
     updateDisplayLayout()
     screenParametersObserver = NotificationCenter.default.addObserver(
@@ -61,6 +71,15 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
         as? NSRunningApplication
       Task { @MainActor [weak self] in
         self?.handleFrontmostAppChange(for: app)
+      }
+    }
+    accessibilityDisplayOptionsObserver = NSWorkspace.shared.notificationCenter.addObserver(
+      forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification,
+      object: nil,
+      queue: .main
+    ) { [weak self] _ in
+      Task { @MainActor [weak self] in
+        self?.updateReduceMotion()
       }
     }
     taskMonitor = DesktopAppServerMonitor(
@@ -89,6 +108,9 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
     if let frontmostAppObserver {
       NSWorkspace.shared.notificationCenter.removeObserver(frontmostAppObserver)
     }
+    if let accessibilityDisplayOptionsObserver {
+      NSWorkspace.shared.notificationCenter.removeObserver(accessibilityDisplayOptionsObserver)
+    }
     unregisterGlobalHotKey()
   }
 
@@ -101,11 +123,13 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
     coordinator.handle(.time(.advanced(to: now)))
     coordinator.handle(.task(event))
     let state = coordinator.viewState
+    let completionSoundEvent = coordinator.drainCompletionSoundEvent()
     let hoverDetail = state.hoverDetail
     diagnosticStore.record(
       "coordinator state_resolved status_after=\(state.status.traceName) working=\(hoverDetail?.workingCount ?? 0) waiting=\(hoverDetail?.waitingCount ?? 0) completed=\(hoverDetail?.completedCount ?? 0) visible=\(state.isVisible)"
     )
     taskMonitor?.updateQuotaRefreshInterval(for: coordinator.viewState.status)
+    playTaskSounds(for: state, completionSoundEvent: completionSoundEvent)
 
     // Process reset events without touching task-status lights.
     let resetEvents = coordinator.drainViewResetEvents()
@@ -115,21 +139,6 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
       )
       for event in resetEvents {
         resetNotificationManager.enqueue(event)
-      }
-
-      // Sync reset banner state into the view state so IdleBeaconView
-      // renders the overlay. Applied only when new reset events arrive,
-      // not on every task event — otherwise the expiry clock never runs.
-      if let message = resetNotificationManager.activeMessage {
-        coordinator.applyResetMessage(
-          message,
-          expiresAt: now.addingTimeInterval(ResetNotificationManager.messageDuration)
-        )
-      }
-
-      // Trigger border pulse when the manager signals a new pulse.
-      if resetNotificationManager.isBorderPulseActive {
-        panel?.startBorderPulse()
       }
     }
 
@@ -223,6 +232,44 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
     diagnosticStore.record(
       "ui panel_updated status=\(state.status.traceName) amber=\(state.lights[1].illumination.traceName) visible=\(state.isVisible) show_task_titles=\(state.showTaskTitles) hover_tasks=\(state.hoverDetail?.tasks.count ?? 0) hover_show_titles=\(state.hoverDetail?.showTaskTitles ?? false)"
     )
+  }
+
+  private func updateReduceMotion() {
+    let reducesMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    coordinator.handle(.system(.reduceMotionChanged(reducesMotion)))
+    panel?.updateBorderPulse(
+      isActive: resetNotificationManager.isBorderPulseActive,
+      reducesMotion: reducesMotion
+    )
+    updatePanelContent()
+  }
+
+  private func playTaskSounds(for state: BeaconViewState, completionSoundEvent: Bool) {
+    var events = eventSoundTracker.observe(
+      waitingTaskIDs: Set(state.waitingTasks.map(\.threadID)),
+      unconfirmedCompletionTaskIDs: state.unconfirmedCompletionTaskIDs
+    )
+    if completionSoundEvent, !events.contains(.completion) {
+      events.append(.completion)
+    }
+    for event in events {
+      let setting = preferences.soundPreferences[event]
+      guard setting.isEnabled else { continue }
+      BeaconSystemSound.play(named: setting.soundName)
+    }
+  }
+
+  private func presentResetDelivery(_ message: String) {
+    let now = Date()
+    coordinator.applyResetMessage(
+      message,
+      expiresAt: now.addingTimeInterval(ResetNotificationManager.messageDuration)
+    )
+    panel?.updateBorderPulse(
+      isActive: resetNotificationManager.isBorderPulseActive,
+      reducesMotion: coordinator.viewState.reducesMotion
+    )
+    updatePanelContent()
   }
 
   // MARK: - Global Hotkey
@@ -353,6 +400,7 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
       hotKey: preferences.hotKey,
       registrationError: hotKeyRegistrationError,
       showTaskTitles: preferences.showTaskTitles,
+      soundPreferences: preferences.soundPreferences,
       onSizeSelected: { [weak self] size in
         self?.updateBeaconSize(size)
       },
@@ -361,6 +409,9 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
       },
       onShowTaskTitlesChanged: { [weak self] enabled in
         self?.updateShowTaskTitles(enabled)
+      },
+      onSoundPreferencesChanged: { [weak self] soundPreferences in
+        self?.updateSoundPreferences(soundPreferences)
       },
       integrationSettings: integrationSettings
     )
@@ -558,6 +609,11 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
     preferencesStore.save(preferences)
     coordinator.setShowTaskTitles(enabled)
     applyCoordinatorUpdate()
+  }
+
+  private func updateSoundPreferences(_ soundPreferences: BeaconSoundPreferences) {
+    preferences.soundPreferences = soundPreferences
+    preferencesStore.save(preferences)
   }
 
   private func replaceGlobalHotKey(with hotKey: BeaconHotKey) -> String? {

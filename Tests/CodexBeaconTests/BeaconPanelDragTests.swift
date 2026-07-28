@@ -48,4 +48,20 @@ struct BeaconPanelDragTests {
 
     #expect(dragEndCount == 1)
   }
+
+  @Test("reduce motion suppresses a new reset pulse and removes an active one")
+  func reduceMotionControlsBorderPulse() {
+    _ = NSApplication.shared
+    let panel = BeaconPanel(state: .idle, onActivate: {}, onDragEnded: {})
+    defer { panel.close() }
+
+    panel.updateBorderPulse(isActive: true, reducesMotion: false)
+    #expect(panel.contentView?.layer?.animation(forKey: "resetBorderPulse") != nil)
+
+    panel.updateBorderPulse(isActive: true, reducesMotion: true)
+    #expect(panel.contentView?.layer?.animation(forKey: "resetBorderPulse") == nil)
+
+    panel.updateBorderPulse(isActive: true, reducesMotion: true)
+    #expect(panel.contentView?.layer?.animation(forKey: "resetBorderPulse") == nil)
+  }
 }

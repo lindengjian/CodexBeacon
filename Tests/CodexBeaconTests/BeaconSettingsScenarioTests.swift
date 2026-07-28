@@ -138,6 +138,28 @@ struct BeaconSettingsScenarioTests {
     registeredHandler?()
     #expect(coordinator.drainEffects() == [.hideBeacon])
   }
+
+  @Test("settings update each event sound independently")
+  func settingsUpdateEventSoundsIndependently() {
+    var saved: [BeaconSoundPreferences] = []
+    let settings = BeaconSettingsModel(
+      size: .standard,
+      hotKey: .init(keyCode: 8, modifiers: 6_400),
+      registrationError: nil,
+      onSizeSelected: { _ in },
+      onHotKeySelected: { _ in nil },
+      onSoundPreferencesChanged: { saved.append($0) }
+    )
+
+    settings.updateSoundEnabled(true, for: .waiting)
+    settings.updateSoundName("Basso", for: .waiting)
+    settings.updateSoundEnabled(true, for: .completion)
+
+    #expect(settings.soundPreferences[.waiting] == .init(isEnabled: true, soundName: "Basso"))
+    #expect(settings.soundPreferences[.completion].isEnabled)
+    #expect(settings.soundPreferences[.quotaReset] == .init(isEnabled: true, soundName: "Ping"))
+    #expect(saved.count == 3)
+  }
 }
 
 private extension Array {

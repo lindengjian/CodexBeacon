@@ -7,7 +7,7 @@ import SwiftUI
 final class BeaconSettingsWindowController: NSWindowController {
   init(rootView: BeaconSettingsView) {
     let window = NSWindow(
-      contentRect: NSRect(x: 0, y: 0, width: 460, height: 590),
+      contentRect: NSRect(x: 0, y: 0, width: 460, height: 690),
       styleMask: [.titled, .closable],
       backing: .buffered,
       defer: false
@@ -64,9 +64,11 @@ struct BeaconSettingsView: View {
     hotKey: BeaconHotKey,
     registrationError: String? = nil,
     showTaskTitles: Bool = false,
+    soundPreferences: BeaconSoundPreferences = .init(),
     onSizeSelected: @escaping (BeaconSize) -> Void,
     onHotKeySelected: @escaping (BeaconHotKey) -> String?,
     onShowTaskTitlesChanged: @escaping (Bool) -> Void = { _ in },
+    onSoundPreferencesChanged: @escaping (BeaconSoundPreferences) -> Void = { _ in },
     integrationSettings: BeaconIntegrationSettingsModel? = nil
   ) {
     _model = StateObject(
@@ -75,9 +77,11 @@ struct BeaconSettingsView: View {
         hotKey: hotKey,
         registrationError: registrationError,
         showTaskTitles: showTaskTitles,
+        soundPreferences: soundPreferences,
         onSizeSelected: onSizeSelected,
         onHotKeySelected: onHotKeySelected,
-        onShowTaskTitlesChanged: onShowTaskTitlesChanged
+        onShowTaskTitlesChanged: onShowTaskTitlesChanged,
+        onSoundPreferencesChanged: onSoundPreferencesChanged
       )
     )
     self.integrationSettings = integrationSettings
@@ -132,12 +136,51 @@ struct BeaconSettingsView: View {
           .foregroundStyle(.secondary)
       }
 
+      VStack(alignment: .leading, spacing: 8) {
+        Text("事件声音")
+        ForEach(BeaconSoundEvent.allCases, id: \.self) { event in
+          HStack {
+            Toggle(
+              soundEventTitle(event),
+              isOn: Binding(
+                get: { model.soundPreferences[event].isEnabled },
+                set: { model.updateSoundEnabled($0, for: event) }
+              )
+            )
+            Picker(
+              "\(soundEventTitle(event))声音",
+              selection: Binding(
+                get: { model.soundPreferences[event].soundName },
+                set: { model.updateSoundName($0, for: event) }
+              )
+            ) {
+              ForEach(BeaconSystemSound.availableNames, id: \.self) { name in
+                Text(name).tag(name)
+              }
+            }
+            .labelsHidden()
+            .frame(width: 120)
+          }
+        }
+        Text("声音使用 macOS 内置提示音；每类事件可单独启用和选择。")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
+
       if let integrationSettings {
         BeaconIntegrationSettingsSection(model: integrationSettings)
       }
     }
     .padding(20)
     .frame(width: 460, alignment: .topLeading)
+  }
+
+  private func soundEventTitle(_ event: BeaconSoundEvent) -> String {
+    switch event {
+    case .waiting: "等待你"
+    case .completion: "完成"
+    case .quotaReset: "额度重置"
+    }
   }
 }
 
@@ -147,27 +190,33 @@ final class BeaconSettingsModel: ObservableObject {
   @Published var hotKey: BeaconHotKey
   @Published var hotKeyError: String?
   @Published private(set) var showTaskTitles: Bool
+  @Published private(set) var soundPreferences: BeaconSoundPreferences
 
   private let onSizeSelected: (BeaconSize) -> Void
   private let onHotKeySelected: (BeaconHotKey) -> String?
   private let onShowTaskTitlesChanged: (Bool) -> Void
+  private let onSoundPreferencesChanged: (BeaconSoundPreferences) -> Void
 
   init(
     size: BeaconSize,
     hotKey: BeaconHotKey,
     registrationError: String?,
     showTaskTitles: Bool = false,
+    soundPreferences: BeaconSoundPreferences = .init(),
     onSizeSelected: @escaping (BeaconSize) -> Void,
     onHotKeySelected: @escaping (BeaconHotKey) -> String?,
-    onShowTaskTitlesChanged: @escaping (Bool) -> Void = { _ in }
+    onShowTaskTitlesChanged: @escaping (Bool) -> Void = { _ in },
+    onSoundPreferencesChanged: @escaping (BeaconSoundPreferences) -> Void = { _ in }
   ) {
     self.size = size
     self.hotKey = hotKey
     hotKeyError = registrationError
     self.showTaskTitles = showTaskTitles
+    self.soundPreferences = soundPreferences
     self.onSizeSelected = onSizeSelected
     self.onHotKeySelected = onHotKeySelected
     self.onShowTaskTitlesChanged = onShowTaskTitlesChanged
+    self.onSoundPreferencesChanged = onSoundPreferencesChanged
   }
 
   func selectSize(_ size: BeaconSize) {
@@ -192,6 +241,18 @@ final class BeaconSettingsModel: ObservableObject {
     guard showTaskTitles != enabled else { return }
     showTaskTitles = enabled
     onShowTaskTitlesChanged(enabled)
+  }
+
+  func updateSoundEnabled(_ enabled: Bool, for event: BeaconSoundEvent) {
+    guard soundPreferences[event].isEnabled != enabled else { return }
+    soundPreferences[event].isEnabled = enabled
+    onSoundPreferencesChanged(soundPreferences)
+  }
+
+  func updateSoundName(_ name: String, for event: BeaconSoundEvent) {
+    guard soundPreferences[event].soundName != name else { return }
+    soundPreferences[event].soundName = name
+    onSoundPreferencesChanged(soundPreferences)
   }
 }
 

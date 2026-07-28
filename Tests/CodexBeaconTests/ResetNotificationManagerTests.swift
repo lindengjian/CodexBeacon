@@ -37,7 +37,7 @@ struct ResetNotificationManagerTests {
     #expect(delivered[0].title == "额度已重置")
     #expect(delivered[0].body.contains("5h"))
     #expect(delivered[0].body.contains("100%"))
-    #expect(delivered[0].sound == .default)
+    #expect(delivered[0].sound == nil)
     #expect(manager.isBorderPulseActive == true)
     #expect(manager.activeMessage != nil)
   }
@@ -196,6 +196,54 @@ struct ResetNotificationManagerTests {
     #expect(manager.activeMessage != nil)
     #expect(manager.activeMessage!.contains("5h"))
     #expect(manager.activeMessage!.contains("100%"))
+  }
+
+  @Test("quota reset sound follows its independent preference")
+  func quotaResetSoundFollowsPreference() async {
+    var currentTime = Self.baseTime
+    var playedSounds: [String] = []
+    let disabledManager = ResetNotificationManager(
+      now: { currentTime },
+      quotaResetSoundSetting: { .init(isEnabled: false, soundName: "Ping") },
+      playSound: { playedSounds.append($0) },
+      deliverNotification: { _ in }
+    )
+
+    disabledManager.enqueue(.init(kind: .confirmed, windowKeys: ["5h"], detectedAt: currentTime))
+    currentTime = currentTime.addingTimeInterval(ResetNotificationManager.mergeWindow + 0.1)
+    disabledManager.flush()
+    #expect(playedSounds.isEmpty)
+
+    let enabledManager = ResetNotificationManager(
+      now: { currentTime },
+      quotaResetSoundSetting: { .init(isEnabled: true, soundName: "Hero") },
+      playSound: { playedSounds.append($0) },
+      deliverNotification: { _ in }
+    )
+    enabledManager.enqueue(.init(kind: .confirmed, windowKeys: ["7d"], detectedAt: currentTime))
+    currentTime = currentTime.addingTimeInterval(ResetNotificationManager.mergeWindow + 0.1)
+    enabledManager.flush()
+    #expect(playedSounds == ["Hero"])
+  }
+
+  @Test("delivery callback updates the UI after the merge window")
+  func deliveryCallbackReceivesMergedMessage() async {
+    var currentTime = Self.baseTime
+    var deliveredMessages: [String] = []
+    let manager = ResetNotificationManager(
+      now: { currentTime },
+      onDelivery: { deliveredMessages.append($0) },
+      deliverNotification: { _ in }
+    )
+
+    manager.enqueue(.init(kind: .confirmed, windowKeys: ["5h"], detectedAt: currentTime))
+    #expect(deliveredMessages.isEmpty)
+
+    currentTime = currentTime.addingTimeInterval(ResetNotificationManager.mergeWindow + 0.1)
+    manager.flush()
+
+    #expect(deliveredMessages.count == 1)
+    #expect(deliveredMessages[0].contains("5h"))
   }
 
   // MARK: - Cancel pending

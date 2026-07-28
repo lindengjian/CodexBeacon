@@ -113,7 +113,7 @@ struct IdleBeaconView: View {
           .fill(BeaconColor.green.opacity(0.7))
       )
       .padding(.bottom, 2)
-      .transition(.opacity.animation(.easeInOut(duration: 0.3)))
+      .transition(state.reducesMotion ? .identity : .opacity.animation(.easeInOut(duration: 0.3)))
   }
 }
 

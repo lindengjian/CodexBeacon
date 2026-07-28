@@ -145,6 +145,26 @@ struct WaitingAndCompletionScenarioTests {
     #expect(coordinator.viewState.unconfirmedCompletionTaskIDs.isEmpty)
   }
 
+  @Test("automatic confirmation does not discard the completion sound event")
+  func automaticConfirmationRetainsCompletionSoundEvent() {
+    let coordinator = AppCoordinator()
+    coordinator.autoConfirmCondition = { true }
+    establishSnapshot(for: coordinator, threads: ["worker": .working])
+
+    sendStatus(.idle, for: "worker", to: coordinator)
+    for request in coordinator.drainAppServerRequests() {
+      coordinator.handle(
+        .task(.appServerMessage("""
+          {"id":\(request.id),"result":{"data":[{"id":"turn-worker","status":"completed"}]}}
+          """))
+      )
+    }
+
+    #expect(coordinator.viewState.unconfirmedCompletionTaskIDs.isEmpty)
+    #expect(coordinator.drainCompletionSoundEvent())
+    #expect(!coordinator.drainCompletionSoundEvent())
+  }
+
   private func establishSnapshot(
     for coordinator: AppCoordinator,
     threads: [String: RuntimeState]

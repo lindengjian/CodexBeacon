@@ -113,4 +113,32 @@ struct BeaconLightAnimationScenarioTests {
     #expect(BeaconLightIllumination.breathing != .steady)
     #expect(BeaconLightIllumination.flashing != .steady)
   }
+
+  @Test("reduce motion makes working, waiting, and completion static but distinguishable")
+  func reduceMotionKeepsTaskStatesDistinctWithoutLampAnimation() {
+    let coordinator = AppCoordinator()
+    establishSnapshot(for: coordinator, threads: ["worker": .working])
+    coordinator.handle(.system(.reduceMotionChanged(true)))
+
+    let workingLight = coordinator.viewState.lights[1]
+    #expect(workingLight.illumination == .breathing)
+    #expect(LightRenderLogic(illumination: workingLight.illumination, reducesMotion: true).shouldAnimate == false)
+
+    sendStatus(.waitingOnApproval, for: "worker", to: coordinator)
+    let waitingLight = coordinator.viewState.lights[2]
+    let waitingLogic = LightRenderLogic(illumination: waitingLight.illumination, reducesMotion: true)
+    #expect(waitingLight.illumination == .flashing)
+    #expect(waitingLogic.showsWaitingRing)
+    #expect(waitingLogic.shouldAnimate == false)
+
+    sendStatus(.idle, for: "worker", to: coordinator)
+    for request in coordinator.drainAppServerRequests() {
+      coordinator.handle(
+        .task(.appServerMessage("""
+          {"id":\(request.id),"result":{"data":[{"id":"turn-worker","status":"completed"}]}}
+          """))
+      )
+    }
+    #expect(coordinator.viewState.lights[2].illumination == .steady)
+  }
 }

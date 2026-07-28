@@ -23,6 +23,9 @@ final class ResetNotificationManager: @unchecked Sendable {
   private let diagnosticStore: LocalDiagnosticStore
   private let now: () -> Date
   private let deliverNotification: @MainActor @Sendable (UNNotificationContent) -> Void
+  private let quotaResetSoundSetting: @MainActor @Sendable () -> BeaconSoundSetting
+  private let playSound: @MainActor @Sendable (String) -> Void
+  private let onDelivery: @MainActor @Sendable (String) -> Void
 
   /// Reset events accumulated within the current merge window, keyed by kind.
   private var pendingConfirmedKeys: Set<String> = []
@@ -39,12 +42,22 @@ final class ResetNotificationManager: @unchecked Sendable {
   init(
     diagnosticStore: LocalDiagnosticStore = .init(),
     now: @escaping () -> Date = { Date() },
+    quotaResetSoundSetting: @escaping @MainActor @Sendable () -> BeaconSoundSetting = {
+      .init(isEnabled: true, soundName: "Ping")
+    },
+    playSound: @escaping @MainActor @Sendable (String) -> Void = {
+      BeaconSystemSound.play(named: $0)
+    },
+    onDelivery: @escaping @MainActor @Sendable (String) -> Void = { _ in },
     deliverNotification: @escaping @MainActor @Sendable (UNNotificationContent) -> Void = {
       ResetNotificationManager.deliverUserNotification($0)
     }
   ) {
     self.diagnosticStore = diagnosticStore
     self.now = now
+    self.quotaResetSoundSetting = quotaResetSoundSetting
+    self.playSound = playSound
+    self.onDelivery = onDelivery
     self.deliverNotification = deliverNotification
   }
 
@@ -149,7 +162,6 @@ final class ResetNotificationManager: @unchecked Sendable {
     let content = UNMutableNotificationContent()
     content.title = title
     content.body = body
-    content.sound = .default
     if #available(macOS 15, *) {
       content.interruptionLevel = .timeSensitive
     }
@@ -157,7 +169,12 @@ final class ResetNotificationManager: @unchecked Sendable {
     isBorderPulseActive = true
     activeMessage = body
 
+    let soundSetting = quotaResetSoundSetting()
+    if soundSetting.isEnabled {
+      playSound(soundSetting.soundName)
+    }
     deliverNotification(content)
+    onDelivery(body)
 
     // Schedule border pulse deactivation.
     DispatchQueue.main.asyncAfter(deadline: .now() + Self.borderPulseDuration) { [weak self] in

@@ -134,4 +134,58 @@ struct BeaconPreferencesTests {
 
     #expect(!restoredAgain.showTaskTitles)
   }
+
+  @Test("event sound defaults keep waiting and completion off while reset is on")
+  func eventSoundDefaults() {
+    let preferences = BeaconPreferences(
+      size: .standard,
+      hotKey: .init(keyCode: 8, modifiers: 6_400),
+      anchor: nil
+    )
+
+    #expect(!preferences.soundPreferences[.waiting].isEnabled)
+    #expect(!preferences.soundPreferences[.completion].isEnabled)
+    #expect(preferences.soundPreferences[.quotaReset].isEnabled)
+  }
+
+  @Test("event sound choices persist independently across relaunch")
+  func eventSoundChoicesPersistIndependently() throws {
+    let suiteName = "BeaconPreferencesTests.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+
+    let store = BeaconPreferencesStore(defaults: defaults)
+    let fallbackHotKey = BeaconHotKey(keyCode: 8, modifiers: 6_400)
+    var preferences = BeaconPreferences(size: .standard, hotKey: fallbackHotKey, anchor: nil)
+    preferences.soundPreferences[.waiting] = .init(isEnabled: true, soundName: "Basso")
+    preferences.soundPreferences[.completion] = .init(isEnabled: true, soundName: "Hero")
+    preferences.soundPreferences[.quotaReset] = .init(isEnabled: false, soundName: "Ping")
+
+    store.save(preferences)
+    let restored = store.load(fallbackHotKey: fallbackHotKey)
+
+    #expect(restored.soundPreferences == preferences.soundPreferences)
+  }
+
+  @Test("legacy preferences use the event sound defaults")
+  func legacyPreferencesUseEventSoundDefaults() throws {
+    let suiteName = "BeaconPreferencesTests.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+
+    let data = try #require(
+      """
+      {"size":"standard","hotKey":{"keyCode":8,"modifiers":6400},"anchor":null}
+      """.data(using: .utf8)
+    )
+    defaults.set(data, forKey: "beaconPreferences")
+
+    let restored = BeaconPreferencesStore(defaults: defaults).load(
+      fallbackHotKey: .init(keyCode: 8, modifiers: 6_400)
+    )
+
+    #expect(!restored.soundPreferences[.waiting].isEnabled)
+    #expect(!restored.soundPreferences[.completion].isEnabled)
+    #expect(restored.soundPreferences[.quotaReset].isEnabled)
+  }
 }

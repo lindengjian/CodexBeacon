@@ -145,4 +145,24 @@ final class BeaconPanel: NSPanel {
     contentView.layer?.borderColor = CGColor.clear
     contentView.layer?.add(group, forKey: "resetBorderPulse")
   }
+
+  /// Applies reset attention while respecting the current macOS accessibility
+  /// setting. Calling this for a Reduce Motion update also removes any pulse
+  /// that was already in flight.
+  func updateBorderPulse(isActive: Bool, reducesMotion: Bool) {
+    guard isActive, !reducesMotion else {
+      stopBorderPulse()
+      return
+    }
+    startBorderPulse()
+  }
+
+  /// Immediately removes the reset attention animation when macOS Reduce
+  /// Motion is enabled while a pulse is already running.
+  func stopBorderPulse() {
+    guard let layer = contentView?.layer else { return }
+    layer.removeAnimation(forKey: "resetBorderPulse")
+    layer.borderWidth = 0
+    layer.borderColor = CGColor.clear
+  }
 }

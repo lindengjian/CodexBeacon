@@ -17,6 +17,7 @@ public struct BeaconPreferences: Codable, Equatable, Sendable {
   public var hasCompletedInitialSetup: Bool
   public var launchesAtLogin: Bool
   public var showTaskTitles: Bool
+  public var soundPreferences: BeaconSoundPreferences
 
   public init(
     size: BeaconSize,
@@ -24,7 +25,8 @@ public struct BeaconPreferences: Codable, Equatable, Sendable {
     anchor: BeaconAnchor?,
     hasCompletedInitialSetup: Bool = false,
     launchesAtLogin: Bool = true,
-    showTaskTitles: Bool = false
+    showTaskTitles: Bool = false,
+    soundPreferences: BeaconSoundPreferences = .init()
   ) {
     self.size = size
     self.hotKey = hotKey
@@ -32,6 +34,7 @@ public struct BeaconPreferences: Codable, Equatable, Sendable {
     self.hasCompletedInitialSetup = hasCompletedInitialSetup
     self.launchesAtLogin = launchesAtLogin
     self.showTaskTitles = showTaskTitles
+    self.soundPreferences = soundPreferences
   }
 
   private enum CodingKeys: String, CodingKey {
@@ -41,6 +44,7 @@ public struct BeaconPreferences: Codable, Equatable, Sendable {
     case hasCompletedInitialSetup
     case launchesAtLogin
     case showTaskTitles
+    case soundPreferences
   }
 
   public init(from decoder: Decoder) throws {
@@ -54,6 +58,10 @@ public struct BeaconPreferences: Codable, Equatable, Sendable {
     ) ?? false
     launchesAtLogin = try container.decodeIfPresent(Bool.self, forKey: .launchesAtLogin) ?? true
     showTaskTitles = try container.decodeIfPresent(Bool.self, forKey: .showTaskTitles) ?? false
+    soundPreferences = try container.decodeIfPresent(
+      BeaconSoundPreferences.self,
+      forKey: .soundPreferences
+    ) ?? .init()
   }
 }
 
