@@ -428,11 +428,11 @@ struct HoverDetailView: View {
   private func taskStateColor(_ state: HoverTaskState) -> Color {
     switch state {
     case .working:
-      return Color(red: 0.98, green: 0.61, blue: 0.12)
+      return BeaconColor.amber
     case .waitingForYou:
-      return Color(red: 0.17, green: 0.82, blue: 0.36)
+      return BeaconColor.green
     case .completed:
-      return .gray
+      return BeaconColor.green
     }
   }
 
