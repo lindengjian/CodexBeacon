@@ -209,6 +209,52 @@ struct HoverDetailScenarioTests {
     #expect(waitingTask.title == "Review PR")
   }
 
+  @Test("hover detail keeps only the highest priority state per session")
+  func hoverDetailDeduplicatesStatesWithinSession() throws {
+    let coordinator = AppCoordinator(showTaskTitles: true)
+
+    establishSnapshot(
+      for: coordinator,
+      threads: ["completed-thread": .working, "working-thread": .working],
+      titles: [
+        "completed-thread": "为 beacon 添加毛玻璃效果",
+        "working-thread": "为 beacon 添加毛玻璃效果",
+      ],
+      sessionIds: [
+        "completed-thread": "sess-beacon",
+        "working-thread": "sess-beacon",
+      ]
+    )
+
+    sendStatus(.idle, for: "completed-thread", to: coordinator)
+
+    for request in coordinator.drainAppServerRequests() {
+      coordinator.handle(
+        .task(
+          .appServerMessage(
+            """
+            {"id":\(request.id),"result":{"data":[{"id":"turn-completed","status":"completed"}]}}
+            """
+          )
+        )
+      )
+    }
+
+    let detail = try #require(coordinator.viewState.hoverDetail)
+    #expect(detail.workingCount == 1)
+    #expect(detail.waitingCount == 0)
+    #expect(detail.completedCount == 0)
+    #expect(detail.aggregateCountsDescription == "工作 1")
+    #expect(detail.tasks == [
+      HoverTaskEntry(
+        threadID: "working-thread",
+        title: "为 beacon 添加毛玻璃效果",
+        sessionId: "sess-beacon",
+        state: .working
+      )
+    ])
+  }
+
   @Test("threadName from status notification captured as task title")
   func threadNameFromStatusNotification() throws {
     let coordinator = AppCoordinator(showTaskTitles: true)

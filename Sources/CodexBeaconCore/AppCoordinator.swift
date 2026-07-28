@@ -297,9 +297,9 @@ public final class AppCoordinator {
     let status = sharedRuntimeValidated ? taskMonitor.status : .monitoringUnavailable
     let quota = quotaMonitor.accountQuota
 
-    var tasks: [HoverTaskEntry] = []
+    var taskCandidates: [HoverTaskEntry] = []
     for waiting in waitingTasks {
-      tasks.append(HoverTaskEntry(
+      taskCandidates.append(HoverTaskEntry(
         threadID: waiting.threadID,
         title: titles[waiting.threadID] ?? waiting.title,
         sessionId: sessionIds[waiting.threadID],
@@ -308,13 +308,14 @@ public final class AppCoordinator {
     }
     for id in workingIDs {
       guard !waitingTasks.contains(where: { $0.threadID == id }) else { continue }
-      tasks.append(HoverTaskEntry(
+      taskCandidates.append(HoverTaskEntry(
         threadID: id, title: titles[id], sessionId: sessionIds[id], state: .working))
     }
     for id in completedIDs {
-      tasks.append(HoverTaskEntry(
+      taskCandidates.append(HoverTaskEntry(
         threadID: id, title: titles[id], sessionId: sessionIds[id], state: .completed))
     }
+    let tasks = deduplicatedHoverTasks(taskCandidates)
 
     let taskError: String? =
       status == .monitoringUnavailable ? "任务监测不可用" : nil
@@ -323,9 +324,9 @@ public final class AppCoordinator {
 
     viewState.hoverDetail = HoverDetailState(
       status: status,
-      workingCount: workingIDs.count,
-      waitingCount: waitingTasks.count,
-      completedCount: completedIDs.count,
+      workingCount: tasks.filter { $0.state == .working }.count,
+      waitingCount: tasks.filter { $0.state == .waitingForYou }.count,
+      completedCount: tasks.filter { $0.state == .completed }.count,
       tasks: tasks,
       quotaWindows: quota.windows,
       lastUpdatedAt: viewState.lastUpdatedAt,
@@ -333,5 +334,20 @@ public final class AppCoordinator {
       quotaError: quotaError,
       showTaskTitles: showTaskTitles
     )
+  }
+
+  private func deduplicatedHoverTasks(_ tasks: [HoverTaskEntry]) -> [HoverTaskEntry] {
+    var seenKeys: Set<String> = []
+    var deduplicated: [HoverTaskEntry] = []
+
+    for task in tasks {
+      let key = task.sessionId.map { "session:\($0)" } ?? "thread:\(task.threadID)"
+      guard seenKeys.insert(key).inserted else {
+        continue
+      }
+      deduplicated.append(task)
+    }
+
+    return deduplicated
   }
 }
