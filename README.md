@@ -48,22 +48,21 @@ observes a loaded `vscode` Desktop thread. Local diagnostics are stored at:
 ~/Library/Application Support/CodexBeacon/task-monitoring-diagnostic.txt
 ```
 
-The file is reset when Beacon starts monitoring, then appends the complete
-current run: connection lifecycle, every App Server request and response
-(with JSON payloads retained up to a safe size limit), task-state resolution,
-and the state applied to the Beacon panel. Writes are batched on a utility
-queue so diagnostics never delay task monitoring. After reproducing a status issue, quit Beacon or
-copy this file and share it for diagnosis. You can also select **Export
-Diagnostic Log** in Settings to copy it into a folder you choose; each export
-gets a timestamped filename and preserves earlier exports. It is local-only,
-but may contain task IDs and titles, so review it before sharing outside a
-trusted channel.
+The file is reset when Beacon starts monitoring, then appends the current
+run's connection lifecycle, protocol method/status metadata, task-state
+resolution, and the state applied to the Beacon panel. It deliberately omits
+raw App Server JSON, task IDs and titles, account fields, and local paths.
+Writes are batched on a utility queue so diagnostics never delay task
+monitoring. Choose **Export Diagnostic Log** in Settings to copy it into a
+folder you select; each export gets a timestamped filename and preserves
+earlier exports. No diagnostic data leaves the Mac unless you explicitly
+export and share that copy.
 
 To remove Beacon's labelled LaunchAgent and restore the previous launchd
 environment value, quit Codex Desktop and run:
 
 ```sh
-.build/debug/CodexBeacon --rollback-shared-daemon
+.build/CodexBeacon.app/Contents/MacOS/CodexBeacon --rollback-shared-daemon
 ```
 
 Then reopen Codex Desktop to restore its default private App Server topology.
@@ -84,3 +83,9 @@ swift test
 The scenario tests launch the complete application core through its public
 coordination seam. They inject task, time, and system-environment events and
 observe only public Beacon view state and effect intentions.
+
+## Local delivery acceptance
+
+The local-milestone acceptance record, including the repeatable build steps,
+automated checks, real Desktop integration procedure, and macOS window matrix,
+is maintained in [docs/acceptance/first-local-milestone.md](docs/acceptance/first-local-milestone.md).

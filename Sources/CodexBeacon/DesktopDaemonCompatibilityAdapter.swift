@@ -96,7 +96,7 @@ final class DesktopDaemonCompatibilityAdapter {
     let programArguments = [
       bundledCLIURL.path,
       "-c", "features.code_mode_host=true",
-      "app-server", "--listen", "unix://", "--analytics-default-enabled",
+      "app-server", "--listen", "unix://",
     ]
     let plist: [String: Any] = [
       "Label": Self.label,

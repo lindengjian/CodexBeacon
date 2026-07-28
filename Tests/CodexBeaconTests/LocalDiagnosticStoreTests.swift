@@ -4,6 +4,37 @@ import Testing
 @testable import CodexBeacon
 
 struct LocalDiagnosticStoreTests {
+  @Test("protocol diagnostics retain only metadata and state summaries")
+  func protocolDiagnosticsMinimizePrivateData() {
+    let entry = DesktopAppServerMonitor.diagnosticEntry(
+      forReceivedMessage: #"{"id":42,"method":"thread/status/changed","params":{"threadId":"task-private-id","threadName":"Quarterly plan — confidential","account":{"email":"owner@example.com"},"localPath":"/Users/owner/Private/project","status":{"type":"active","activeFlags":["waitingOnUserInput"]}}}"#
+    )
+
+    #expect(entry.contains("id=42"))
+    #expect(entry.contains("method=thread/status/changed"))
+    #expect(entry.contains("status_type=active"))
+    #expect(entry.contains("active_flags=waitingOnUserInput"))
+    #expect(!entry.contains("task-private-id"))
+    #expect(!entry.contains("Quarterly plan"))
+    #expect(!entry.contains("owner@example.com"))
+    #expect(!entry.contains("/Users/owner/Private/project"))
+  }
+
+  @Test("quota refresh diagnostics omit server error text")
+  func quotaRefreshDiagnosticsMinimizeServerErrorText() {
+    let reason = DesktopAppServerMonitor.quotaRefreshErrorReason(
+      for: [
+        "code": -32,
+        "message": "Quarterly plan for owner@example.com at /Users/owner/Private/project",
+      ]
+    )
+
+    #expect(reason == "server_error code=-32")
+    #expect(!reason.contains("Quarterly plan"))
+    #expect(!reason.contains("owner@example.com"))
+    #expect(!reason.contains("/Users/owner/Private/project"))
+  }
+
   @Test("recording diagnostic data never blocks the caller")
   func recordsAsynchronously() throws {
     let directory = FileManager.default.temporaryDirectory

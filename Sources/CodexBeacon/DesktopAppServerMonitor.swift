@@ -56,7 +56,7 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
 
   func start() {
     diagnosticStore.beginRun()
-    diagnosticStore.record("lifecycle monitor_start socket_path=\(socketPath)")
+    diagnosticStore.record("lifecycle monitor_start")
     isStopped = false
     attemptConnection()
   }
@@ -186,7 +186,7 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
       return
     }
     connectionAttemptInFlight = true
-    diagnosticStore.record("connection attempt_started socket_path=\(socketPath)")
+    diagnosticStore.record("connection attempt_started")
 
     guard let bundledCLIURL else {
       connectionAttemptFailed("Codex Desktop's bundled CLI was not found. Open Settings to run local integration diagnostics.")
@@ -264,9 +264,8 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
     }
 
     diagnosticStore.record(
-      "protocol received generation=\(generation) \(Self.protocolSummary(for: object))"
+      "protocol received generation=\(generation) \(Self.diagnosticEntry(for: object))"
     )
-    diagnosticStore.record("protocol payload=\(Self.singleLineJSON(message))")
 
     recordQuotaRefreshResponse(from: object)
 
@@ -352,7 +351,7 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
         recordQuotaRefreshRequest(request.id)
       }
       diagnosticStore.record(
-        "protocol sent id=\(request.id) method=\(request.method) thread_id=\(request.threadID ?? "none")"
+        "protocol sent id=\(request.id) method=\(request.method)"
       )
       client?.send(["id": request.id, "method": request.method, "params": params])
     }
@@ -463,11 +462,9 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
     }
     let elapsedMilliseconds = Int(Date().timeIntervalSince(sentAt) * 1_000)
     if let error = object["error"] as? [String: Any] {
-      let code = error["code"].map { String(describing: $0) } ?? "unknown"
-      let message = error["message"] as? String ?? "missing_error_message"
       recordQuotaRefreshFailure(
         requestID: requestID,
-        reason: "server_error code=\(code) message=\(message)",
+        reason: Self.quotaRefreshErrorReason(for: error),
         latencyMilliseconds: elapsedMilliseconds
       )
       return
@@ -522,7 +519,19 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
     (FileManager.default.homeDirectoryForCurrentUser.path as NSString)
       .appendingPathComponent(".codex/app-server-control/app-server-control.sock")
 
-  private static func protocolSummary(for object: [String: Any]) -> String {
+  static func quotaRefreshErrorReason(for error: [String: Any]) -> String {
+    let code = error["code"].map { String(describing: $0) } ?? "unknown"
+    return "server_error code=\(code)"
+  }
+
+  static func diagnosticEntry(forReceivedMessage message: String) -> String {
+    guard let object = try? JSONSerialization.jsonObject(with: Data(message.utf8)) as? [String: Any] else {
+      return "kind=invalid_json"
+    }
+    return diagnosticEntry(for: object)
+  }
+
+  private static func diagnosticEntry(for object: [String: Any]) -> String {
     var fields: [String] = []
     if let id = object["id"] {
       fields.append("id=\(id)")
@@ -535,37 +544,26 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
     }
 
     if let params = object["params"] as? [String: Any],
-      let threadID = params["threadId"] as? String
+      params["threadId"] is String
     {
-      fields.append("thread_id=\(threadID)")
-      if let threadName = params["threadName"] as? String {
-        fields.append("thread_name=\(threadName)")
-      }
+      fields.append("thread=true")
       fields.append(contentsOf: threadStatusFields(params["status"]))
     }
 
     if let result = object["result"] as? [String: Any] {
       if let threadIDs = result["data"] as? [String] {
-        fields.append("thread_ids=\(threadIDs.joined(separator: ","))")
+        fields.append("thread_count=\(threadIDs.count)")
       }
       if let thread = result["thread"] as? [String: Any] {
-        if let threadID = thread["id"] as? String {
-          fields.append("thread_id=\(threadID)")
-        }
+        fields.append("thread=true")
         if let source = thread["source"] {
           fields.append("source=\(source)")
         }
         if let threadSource = thread["threadSource"] as? String {
           fields.append("thread_source=\(threadSource)")
         }
-        if let threadName = thread["threadName"] as? String {
-          fields.append("thread_name=\(threadName)")
-        }
         if let ephemeral = thread["ephemeral"] as? Bool {
           fields.append("ephemeral=\(ephemeral)")
-        }
-        if let parentThreadID = thread["parentThreadId"] as? String {
-          fields.append("parent_thread_id=\(parentThreadID)")
         }
         fields.append(contentsOf: threadStatusFields(thread["status"]))
       }
@@ -587,18 +585,6 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
       fields.append("active_flags=\(flags.joined(separator: ","))")
     }
     return fields
-  }
-
-  private static func singleLineJSON(_ message: String) -> String {
-    let maximumPayloadCharacters = 16_384
-    let isTruncated = message.count > maximumPayloadCharacters
-    let payload = isTruncated ? String(message.prefix(maximumPayloadCharacters)) : message
-    let escaped = payload
-      .replacingOccurrences(of: "\\", with: "\\\\")
-      .replacingOccurrences(of: "\n", with: "\\n")
-      .replacingOccurrences(of: "\r", with: "\\r")
-    guard isTruncated else { return escaped }
-    return "\(escaped)… [truncated original_characters=\(message.count)]"
   }
 
   private static func findBundledCLI() -> URL? {
