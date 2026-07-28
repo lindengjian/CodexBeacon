@@ -6,7 +6,7 @@
 
 [中文文档](README.md)
 
-Codex Beacon is a native macOS companion for Codex Desktop. It shows the aggregate state of your Codex Desktop tasks as a compact, non-activating traffic light, with your current account quota at the edge.
+Codex Beacon is a native macOS companion for Codex Desktop. It shows the aggregate state of your Codex Desktop tasks with a traffic-light-style indicator, with your current account quota at the edge.
 
 It fails closed: when current, reliable Desktop runtime evidence is unavailable, it shows **Monitoring unavailable** rather than treating that condition as idle.
 

@@ -6,7 +6,7 @@
 
 [English README](README.en.md)
 
-Codex Beacon 是一个原生 macOS 工具，用紧凑、非激活的三色状态灯展示 Codex Desktop 任务的聚合状态，并在边缘额度刻度上显示当前账户额度。
+Codex Beacon 是一个原生 macOS 工具，用类红绿灯展示 Codex Desktop 任务的聚合状态，并在边缘额度刻度上显示当前账户额度。
 
 它采用保守策略：如果缺少足够且及时的 Desktop 运行时证据，就显示 **监测不可用**，绝不会误报为“空闲”。
 
