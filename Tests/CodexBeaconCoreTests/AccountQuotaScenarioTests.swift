@@ -74,8 +74,10 @@ struct AccountQuotaScenarioTests {
     let initialRequests = coordinator.drainAppServerRequests()
     let taskRequest = initialRequests.first { $0.method == "thread/loaded/list" }!
     let quotaRequest = initialRequests.first { $0.method == "account/rateLimits/read" }!
+    let accountRequest = initialRequests.first { $0.method == "account/read" }!
 
     #expect(taskRequest.id != quotaRequest.id)
+    #expect(accountRequest.id != quotaRequest.id)
 
     coordinator.handle(
       .task(.appServerMessage("""
@@ -86,7 +88,8 @@ struct AccountQuotaScenarioTests {
     coordinator.handle(.task(.quotaSnapshotRequested))
     let refreshRequests = coordinator.drainAppServerRequests()
 
-    #expect(Set(initialRequests.map(\.id) + refreshRequests.map(\.id)).count == 4)
+    let allRequestIDs = initialRequests.map(\.id) + refreshRequests.map(\.id)
+    #expect(Set(allRequestIDs).count == allRequestIDs.count)
   }
 
   @Test("a late quota snapshot does not overwrite a newer periodic snapshot")

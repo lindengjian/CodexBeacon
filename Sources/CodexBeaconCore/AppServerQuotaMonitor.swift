@@ -7,12 +7,13 @@ struct AppServerQuotaMonitor {
   private var pendingSnapshotRequestID: Int?
   private var requests: [AppServerRequest] = []
   private var resetEvents: [QuotaResetEvent] = []
-
-  /// Threshold below which a window is considered effectively reset (used % ≈ 0).
-  private static let resetThreshold: Double = 5
-  /// A window with used percentage at or above this value is considered
-  /// meaningfully consumed before a reset.
-  private static let meaningfulUsageThreshold: Double = 10
+  private var baselineObservations: [QuotaBaselineObservation] = []
+  private var hasReceivedSnapshotForConnection = false
+  private var accountContextID: String?
+  private var pendingAccountReadRequestID: Int?
+  private var initialSnapshotAwaitingAccountContext: (window: QuotaWindow, observedAt: Date)?
+  private var baselineWasInvalidated = false
+  private var accountContextObservations: [String] = []
 
   init(requestIDGenerator: AppServerRequestIDGenerator) {
     self.requestIDGenerator = requestIDGenerator
@@ -22,8 +23,6 @@ struct AppServerQuotaMonitor {
     guard state == .available else {
       return AccountQuotaState(windows: [], selectedWindow: nil, isAvailable: false)
     }
-    let valid = windows.values.filter { $0.durationSeconds > 0 }
-    let selected = valid.min { $0.durationSeconds < $1.durationSeconds }
     let all = windows.values.sorted { lhs, rhs in
       let lh = lhs.durationSeconds > 0 ? lhs.durationSeconds : TimeInterval.infinity
       let rh = rhs.durationSeconds > 0 ? rhs.durationSeconds : TimeInterval.infinity
@@ -31,7 +30,7 @@ struct AppServerQuotaMonitor {
     }
     return AccountQuotaState(
       windows: all,
-      selectedWindow: selected,
+      selectedWindow: currentQuotaWindow,
       isAvailable: true
     )
   }
@@ -44,6 +43,14 @@ struct AppServerQuotaMonitor {
     pendingSnapshotRequestID = nil
     requests.removeAll()
     resetEvents.removeAll()
+    baselineObservations.removeAll()
+    hasReceivedSnapshotForConnection = false
+    accountContextID = nil
+    pendingAccountReadRequestID = nil
+    initialSnapshotAwaitingAccountContext = nil
+    baselineWasInvalidated = false
+    accountContextObservations.removeAll()
+    requestAccountContext()
     requestSnapshot()
   }
 
@@ -53,6 +60,11 @@ struct AppServerQuotaMonitor {
     pendingSnapshotRequestID = nil
     requests.removeAll()
     resetEvents.removeAll()
+    baselineObservations.removeAll()
+    hasReceivedSnapshotForConnection = false
+    pendingAccountReadRequestID = nil
+    initialSnapshotAwaitingAccountContext = nil
+    accountContextObservations.removeAll()
   }
 
   mutating func observationBecameStale() {
@@ -79,10 +91,19 @@ struct AppServerQuotaMonitor {
     }
 
     if let method = header.method {
-      guard method == QuotaMethod.rateLimitsUpdated else {
+      switch method {
+      case QuotaMethod.rateLimitsUpdated:
+        return handleRateLimitsNotification(data, observedAt: observedAt)
+      case QuotaMethod.accountUpdated:
+        return handleAccountContextUpdated(data)
+      default:
         return false
       }
-      return handleRateLimitsNotification(data, observedAt: observedAt)
+    }
+
+    if let requestID = header.id, requestID == pendingAccountReadRequestID {
+      pendingAccountReadRequestID = nil
+      return handleAccountContextResponse(data)
     }
 
     if let requestID = header.id, requestID == pendingSnapshotRequestID {
@@ -107,10 +128,32 @@ struct AppServerQuotaMonitor {
     return resetEvents
   }
 
+  mutating func drainBaselineObservations() -> [QuotaBaselineObservation] {
+    defer { baselineObservations.removeAll() }
+    return baselineObservations
+  }
+
+  mutating func drainBaselineInvalidation() -> Bool {
+    defer { baselineWasInvalidated = false }
+    return baselineWasInvalidated
+  }
+
+  mutating func drainAccountContextObservations() -> [String] {
+    defer { accountContextObservations.removeAll() }
+    return accountContextObservations
+  }
+
   private mutating func requestSnapshot() {
     let request = AppServerRequest(
       id: requestIDGenerator.next(), method: QuotaMethod.readRateLimits)
     pendingSnapshotRequestID = request.id
+    requests.append(request)
+  }
+
+  private mutating func requestAccountContext() {
+    let request = AppServerRequest(
+      id: requestIDGenerator.next(), method: QuotaMethod.readAccount)
+    pendingAccountReadRequestID = request.id
     requests.append(request)
   }
 
@@ -125,6 +168,21 @@ struct AppServerQuotaMonitor {
     }
     state = .available
     detectResets(previous: previous, observedAt: observedAt, kind: .confirmed)
+    let isInitialSnapshot = !hasReceivedSnapshotForConnection
+    if let selectedWindow = currentQuotaWindow {
+      baselineObservations.append(
+        QuotaBaselineObservation(
+          accountContextID: accountContextID,
+          window: selectedWindow,
+          observedAt: observedAt,
+          isInitialSnapshotForConnection: isInitialSnapshot
+        )
+      )
+      if isInitialSnapshot, accountContextID == nil {
+        initialSnapshotAwaitingAccountContext = (selectedWindow, observedAt)
+      }
+    }
+    hasReceivedSnapshotForConnection = true
     return true
   }
 
@@ -145,6 +203,48 @@ struct AppServerQuotaMonitor {
     return true
   }
 
+  private mutating func handleAccountContextResponse(_ data: Data) -> Bool {
+    guard let response = try? JSONDecoder().decode(AccountReadResponse.self, from: data) else {
+      return true
+    }
+    updateAccountContext(response.result.stableIdentifier)
+    return true
+  }
+
+  private mutating func handleAccountContextUpdated(_ data: Data) -> Bool {
+    guard (try? JSONDecoder().decode(AccountUpdatedNotification.self, from: data)) != nil else {
+      return false
+    }
+    // The protocol tells us that authentication context changed, but does not
+    // guarantee a stable account ID. Clearing is safer than carrying a quota
+    // baseline into the newly authenticated context.
+    accountContextID = nil
+    baselineWasInvalidated = true
+    return true
+  }
+
+  private mutating func updateAccountContext(_ identifier: String?) {
+    guard let identifier else {
+      return
+    }
+    if let accountContextID, accountContextID != identifier {
+      baselineWasInvalidated = true
+    }
+    accountContextID = identifier
+    accountContextObservations.append(identifier)
+    if let initialSnapshotAwaitingAccountContext {
+      baselineObservations.append(
+        QuotaBaselineObservation(
+          accountContextID: identifier,
+          window: initialSnapshotAwaitingAccountContext.window,
+          observedAt: initialSnapshotAwaitingAccountContext.observedAt,
+          isInitialSnapshotForConnection: true
+        )
+      )
+      self.initialSnapshotAwaitingAccountContext = nil
+    }
+  }
+
   /// Detects quota resets by comparing previous window state to current.
   ///
   /// A reset is recognised when a window that previously had meaningful
@@ -162,8 +262,8 @@ struct AppServerQuotaMonitor {
     var resetKeys: [String] = []
     for (key, current) in windows {
       let prev = previous[key]
-      let wasMeaningful = (prev?.usedPercentage ?? 0) >= Self.meaningfulUsageThreshold
-      let isNearZero = current.usedPercentage <= Self.resetThreshold
+      let wasMeaningful = (prev?.usedPercentage ?? 0) >= QuotaResetEvidencePolicy.meaningfulUsageThreshold
+      let isNearZero = current.usedPercentage <= QuotaResetEvidencePolicy.resetThreshold
 
       guard wasMeaningful && isNearZero else {
         continue
@@ -216,6 +316,12 @@ struct AppServerQuotaMonitor {
       resetAt: resetAt
     )
   }
+
+  private var currentQuotaWindow: QuotaWindow? {
+    windows.values
+      .filter { $0.durationSeconds > 0 }
+      .min { $0.durationSeconds < $1.durationSeconds }
+  }
 }
 
 private enum QuotaMonitorState {
@@ -228,6 +334,8 @@ private enum QuotaMonitorState {
 private enum QuotaMethod {
   static let readRateLimits = "account/rateLimits/read"
   static let rateLimitsUpdated = "account/rateLimits/updated"
+  static let readAccount = "account/read"
+  static let accountUpdated = "account/updated"
 }
 
 private struct QuotaMessageHeader: Decodable {
@@ -241,6 +349,31 @@ private struct RateLimitsResponse: Decodable {
 
 private struct RateLimitsResult: Decodable {
   let rateLimits: RateLimitsPayload
+}
+
+private struct AccountReadResponse: Decodable {
+  let result: AccountContextPayload
+}
+
+private struct AccountUpdatedNotification: Decodable {
+  let params: AccountContextPayload
+}
+
+private struct AccountContextPayload: Decodable {
+  let email: String?
+  let account: AccountIdentity?
+  let authMode: String?
+  let planType: String?
+
+  var stableIdentifier: String? {
+    [email, account?.email]
+      .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .first { !$0.isEmpty }
+  }
+}
+
+private struct AccountIdentity: Decodable {
+  let email: String?
 }
 
 private enum RateLimitsPayload: Decodable {

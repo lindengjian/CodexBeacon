@@ -15,6 +15,7 @@ public final class AppCoordinator {
   private let requestIDGenerator: AppServerRequestIDGenerator
   private var taskMonitor: AppServerTaskMonitor
   private var quotaMonitor: AppServerQuotaMonitor
+  private let confirmableQuotaResetDetector: ConfirmableQuotaResetDetector
   private let requiresSharedRuntimeEvidence: Bool
   private var sharedRuntimeValidated: Bool
   private var hasStarted = false
@@ -29,12 +30,14 @@ public final class AppCoordinator {
     requiresSharedRuntimeEvidence: Bool = false,
     initialBeaconAnchor: BeaconAnchor? = nil,
     initialBeaconSize: BeaconSize = .standard,
-    showTaskTitles: Bool = false
+    showTaskTitles: Bool = false,
+    quotaResetBaselineStore: QuotaResetBaselineStore = .init()
   ) {
     let requestIDGenerator = AppServerRequestIDGenerator()
     self.requestIDGenerator = requestIDGenerator
     taskMonitor = AppServerTaskMonitor(requestIDGenerator: requestIDGenerator)
     quotaMonitor = AppServerQuotaMonitor(requestIDGenerator: requestIDGenerator)
+    confirmableQuotaResetDetector = ConfirmableQuotaResetDetector(store: quotaResetBaselineStore)
     self.requiresSharedRuntimeEvidence = requiresSharedRuntimeEvidence
     sharedRuntimeValidated = !requiresSharedRuntimeEvidence
     beaconAnchor = initialBeaconAnchor
@@ -103,11 +106,23 @@ public final class AppCoordinator {
       if quotaHandled {
         viewState.quotaTrack = quotaTrackState(from: quotaMonitor.accountQuota)
         updateHoverDetail()
+        for accountContext in quotaMonitor.drainAccountContextObservations() {
+          confirmableQuotaResetDetector.clearBaselineIfAccountChanged(to: accountContext)
+        }
+        if quotaMonitor.drainBaselineInvalidation() {
+          confirmableQuotaResetDetector.clearBaseline()
+        }
         // Drain reset events detected by the quota monitor and surface them
         // in the view state for the app delegate to process.
         let resets = quotaMonitor.drainResetEvents()
         if !resets.isEmpty {
           viewState.pendingResetEvents.append(contentsOf: resets)
+        }
+        let confirmableResets = quotaMonitor.drainBaselineObservations().compactMap {
+          confirmableQuotaResetDetector.observe($0)
+        }
+        if !confirmableResets.isEmpty {
+          viewState.pendingResetEvents.append(contentsOf: confirmableResets)
         }
       }
       let newCompletions = taskMonitor.unconfirmedCompletionTaskIDs.subtracting(
