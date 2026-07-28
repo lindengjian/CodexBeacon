@@ -6,3 +6,4 @@ DerivedData/
 AGENTS.md
 spikes/simulate-quota-reset.mjs
 spikes/trigger-reset.swift
+.codegraph/
