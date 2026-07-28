@@ -2,11 +2,31 @@
 
 [中文文档](README.zh-CN.md)
 
-Codex Beacon is a native macOS companion for Codex Desktop. It presents the aggregate state of Codex Desktop tasks as a compact, non-activating traffic light and shows the current account quota in an edge gauge.
+Codex Beacon is a native macOS companion for Codex Desktop. It shows the aggregate state of your Codex Desktop tasks as a compact, non-activating traffic light, with your current account quota at the edge.
 
-It fails closed: if it does not have current, reliable Desktop runtime evidence, it shows **monitoring unavailable** instead of mistaking that condition for idle.
+It fails closed: when current, reliable Desktop runtime evidence is unavailable, it shows **Monitoring unavailable** rather than treating that condition as idle.
 
-## Status at a glance
+## Download
+
+[Download Codex Beacon 1.0.0](https://github.com/lindengjian/CodexStateTool/releases/tag/v1.0.0)
+
+The release page includes the Apple Silicon DMG and its SHA-256 checksum.
+
+### Requirements
+
+- macOS 15 or later
+- Apple Silicon Mac
+- Codex Desktop installed locally
+
+### Install
+
+1. Download and open `CodexBeacon-1.0.0-arm64.dmg`.
+2. Drag **Codex Beacon** to **Applications**.
+3. Open Codex Beacon from Applications. If macOS asks you to confirm opening it, follow the system prompt.
+
+On first launch, Beacon checks the local Codex Desktop integration, requests notification permission, and offers **Launch at Login**. It then runs as an accessory application without a Dock icon or menu-bar item.
+
+## What it shows
 
 | Idle | Working | Completed |
 | :---: | :---: | :---: |
@@ -16,100 +36,55 @@ It fails closed: if it does not have current, reliable Desktop runtime evidence,
 | State | Signal | Meaning |
 | --- | --- | --- |
 | Monitoring unavailable | Steady red | Desktop monitoring evidence is missing, stale, or incompatible. |
-| Waiting for you | Flashing green | A task needs approval, authorization, or an answer. |
+| Approval | Flashing green | A task needs approval, authorization, or an answer. |
 | Working | Breathing amber | At least one task is active. |
 | Completed | Steady green | At least one successful completion has not been confirmed. |
-| Idle | All lamps off | No waiting, active, or unconfirmed-completion task remains. |
+| Idle | All lamps off | No approval, active, or unconfirmed-completion task remains. |
 
-When tasks differ, the state order above determines the displayed signal. With macOS **Reduce Motion** enabled, animations stop; waiting is a double green ring so it remains distinct from a completed task.
+When tasks differ, this order determines the displayed signal. With macOS **Reduce Motion** enabled, animations stop; Approval uses a double green ring so it remains distinct from Completed.
 
 ## Features
 
-- Monitors **Codex Desktop tasks only**, excluding CLI, IDE-extension, and remote tasks.
-- Uses an always-visible floating panel that works across Spaces and eligible full-screen apps, snaps to screen edges, and creates neither a Dock icon nor a menu-bar item.
-- Opens or focuses the relevant Codex task when clicked; that click also confirms completions that already existed.
-- Shows hover details for aggregate task counts, quota windows, reset times, update time, and monitoring errors. Task titles are hidden by default and can be enabled in Settings.
-- Automatically selects the shortest currently reported quota window—no fixed five-hour or weekly window is assumed.
-- Alerts on a confirmable quota reset with a macOS notification, optional system sound, a five-second frame pulse, and a temporary message. Nearby resets are combined into one alert.
-- Supports standard (`62 × 229 pt`) and compact (`24 × 88 pt`) sizes, a configurable global shortcut, launch at login, and separately configurable sounds for waiting, completion, and quota reset.
-
-## Requirements
-
-- macOS 15 or later
-- Apple Silicon
-- Xcode 16 or later
-- Codex Desktop installed locally
-
-This Swift Package has no third-party package dependencies.
-
-## Build, run, and test
-
-```sh
-# Test
-swift test
-
-# Build and run with SwiftPM
-swift build --arch arm64
-swift run CodexBeacon
-
-# Build an application bundle
-./scripts/build-app.sh
-open .build/CodexBeacon.app
-```
-
-The first launch opens setup to check the local Codex Desktop integration, request notification permission, and offer **Launch at Login** (on by default). Beacon then runs as an accessory application without a Dock or menu-bar presence.
-
-## Desktop integration
-
-Beacon passively observes the local Codex App Server. Accurate live state requires Codex Desktop and Beacon to share the same Unix-socket App Server daemon. Beacon connects as a second initialized client, reads loaded threads, state notifications, the newest terminal turn, and quota snapshots. It never resumes or changes a task, answers server approval/input requests, or parses private transcripts.
-
-Codex Desktop's default private stdio App Server cannot be safely attached after Desktop starts. If Settings reports monitoring unavailable:
-
-1. Open **Settings** from Beacon's right-click menu and run the diagnostic.
-2. Choose **Repair integration** only when it is offered.
-3. Save your work, fully quit Codex Desktop, and reopen it.
-4. Run the diagnostic again. Beacon needs an observed loaded Desktop runtime thread before it leaves the red unavailable state.
-
-Repair writes only Beacon's labelled user LaunchAgent and a compatibility setting for the next Desktop process. It never quits Desktop or interrupts a task. The path is strictly version-gated: an unsupported or mismatched bundled Codex CLI keeps monitoring unavailable rather than using an unsafe fallback.
-
-To restore the default private-App-Server topology, select **Restore Default Desktop Integration** in Settings, fully quit Desktop, and reopen it. After building the application bundle, the same rollback is available from the command line:
-
-```sh
-.build/CodexBeacon.app/Contents/MacOS/CodexBeacon --rollback-shared-daemon
-```
+- Monitors **Codex Desktop tasks only**; CLI, IDE-extension, and remote tasks are excluded.
+- Keeps a small floating panel visible across Spaces and eligible full-screen apps, with edge snapping and no Dock or menu-bar presence.
+- Opens or focuses the relevant Codex task when clicked, then confirms existing completions.
+- Shows aggregate task counts, quota windows, reset times, update time, and monitoring errors on hover. Task titles are hidden by default.
+- Selects the shortest currently reported quota window automatically; it does not assume a fixed five-hour or weekly window.
+- Alerts on a confirmable quota reset with a notification, optional sound, a five-second frame pulse, and a temporary message. Nearby resets are combined into one alert.
+- Supports standard (`62 × 229 pt`) and compact (`24 × 88 pt`) sizes, a configurable global shortcut, launch at login, and separate sounds for Approval, Completed, and quota reset.
 
 ## Use
 
-- **Click** to open/focus the oldest waiting task, otherwise a completed or working task, and confirm existing completions.
+- **Click** to open or focus the oldest task requiring approval; otherwise, a completed or working task. The click also confirms existing completions.
 - **Hover** to see state counts, quota windows, reset times, last update, and availability errors.
-- **Drag** to any edge. Left/right edges are vertical; top/bottom edges are horizontal. The saved placement safely migrates to the primary display if a display disconnects.
+- **Drag** to any screen edge. Left and right edges are vertical; top and bottom edges are horizontal.
 - **Right-click** for Settings, temporary hide/show, or quit.
-- Press **Control + Option + Command + C** (the default) to show or hide Beacon; replace it in Settings if needed.
+- Press **Control + Option + Command + C** to show or hide Beacon; change the shortcut in Settings if needed.
 
-## Privacy and diagnostics
+## Local integration
 
-Beacon communicates only with the local Codex App Server. It includes no telemetry, crash reporting, cloud sync, or automatic-update check.
+Beacon passively observes the local Codex App Server and never resumes or changes a task, answers approval/input requests, or reads private transcripts. If Settings reports **Monitoring unavailable**, run the diagnostic and select **Repair integration** only when it is offered; then fully quit and reopen Codex Desktop before running the diagnostic again.
 
-Its local diagnostic trace is stored at:
+You can restore the default Desktop integration from Settings at any time.
 
-```text
-~/Library/Application Support/CodexBeacon/task-monitoring-diagnostic.txt
+## Privacy
+
+Beacon communicates only with the local Codex App Server. It has no telemetry, crash reporting, cloud sync, or automatic-update check.
+
+Its local diagnostic trace records connection lifecycle and protocol/status metadata, but not raw App Server JSON, task IDs or titles, account fields, or local paths. It leaves the Mac only when you explicitly export a timestamped copy from Settings.
+
+## Development
+
+Development requires Xcode 16 or later. From the repository root:
+
+```sh
+# Run the test suite
+swift test
+
+# Assemble a release application bundle at .build/CodexBeacon.app
+./scripts/build-app.sh
 ```
 
-The trace records connection lifecycle and protocol/status metadata, but not raw App Server JSON, task IDs or titles, account fields, or local paths. It leaves the Mac only if you explicitly export a timestamped copy from Settings.
+## Learn more
 
-## Project layout
-
-```text
-Sources/CodexBeaconCore/  State aggregation, quota parsing, placement, and rendering rules
-Sources/CodexBeacon/      AppKit/SwiftUI UI, App Server connection, setup, settings, and diagnostics
-Tests/                    Core scenarios and macOS integration-boundary tests
-docs/                     Product specification, acceptance evidence, architecture decisions, and research
-scripts/build-app.sh      Creates the application bundle
-```
-
-See [the acceptance record](docs/acceptance/first-local-milestone.md) for detailed compatibility checks and the manual macOS window matrix, and [docs/PRODUCT.md](docs/PRODUCT.md) for the product specification.
-
-## Scope and limitations
-
-The current scope supports Apple Silicon macOS only. It does not aggregate multiple accounts, monitor CLI/IDE/remote tasks, retain task history, control tasks, report per-task context usage, or claim visibility above macOS-protected surfaces such as the Lock Screen or security panels.
+See [the acceptance record](docs/acceptance/first-local-milestone.md) for compatibility checks and the macOS window matrix, and [docs/PRODUCT.md](docs/PRODUCT.md) for product details and scope.
