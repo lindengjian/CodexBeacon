@@ -1,90 +1,90 @@
 # Codex Beacon
 
-[中文文档](README.zh-CN.md)
+[English README](README.en.md)
 
-Codex Beacon is a native macOS companion for Codex Desktop. It shows the aggregate state of your Codex Desktop tasks as a compact, non-activating traffic light, with your current account quota at the edge.
+Codex Beacon 是一个原生 macOS 工具，用紧凑、非激活的三色状态灯展示 Codex Desktop 任务的聚合状态，并在边缘额度刻度上显示当前账户额度。
 
-It fails closed: when current, reliable Desktop runtime evidence is unavailable, it shows **Monitoring unavailable** rather than treating that condition as idle.
+它采用保守策略：如果缺少足够且及时的 Desktop 运行时证据，就显示 **监测不可用**，绝不会误报为“空闲”。
 
-## Download
+## 下载
 
-[Download Codex Beacon 1.0.0](https://github.com/lindengjian/CodexStateTool/releases/tag/v1.0.0)
+[下载 Codex Beacon 1.0.0](https://github.com/lindengjian/CodexStateTool/releases/tag/v1.0.0)
 
-The release page includes the Apple Silicon DMG and its SHA-256 checksum.
+Release 页面提供 Apple Silicon DMG 和对应的 SHA-256 校验值。
 
-### Requirements
+### 系统要求
 
-- macOS 15 or later
+- macOS 15 或更高版本
 - Apple Silicon Mac
-- Codex Desktop installed locally
+- 已在本机安装 Codex Desktop
 
-### Install
+### 安装
 
-1. Download and open `CodexBeacon-1.0.0-arm64.dmg`.
-2. Drag **Codex Beacon** to **Applications**.
-3. Open Codex Beacon from Applications. If macOS asks you to confirm opening it, follow the system prompt.
+1. 下载并打开 `CodexBeacon-1.0.0-arm64.dmg`。
+2. 将 **Codex Beacon** 拖入 **Applications** 文件夹。
+3. 在 Applications 中打开 Codex Beacon；如 macOS 要求确认打开，请按系统提示操作。
 
-On first launch, Beacon checks the local Codex Desktop integration, requests notification permission, and offers **Launch at Login**. It then runs as an accessory application without a Dock icon or menu-bar item.
+首次启动时，Beacon 会检查本机 Codex Desktop 集成、请求通知权限，并提供“登录时启动”。随后它以 accessory 应用方式运行，不显示 Dock 图标或菜单栏项目。
 
-## What it shows
+## 它展示什么
 
-| Idle | Working | Completed |
+| 空闲 | 工作 | 已完成 |
 | :---: | :---: | :---: |
-| ![Idle Beacon](docs/images/status-idle.png) | ![Working Beacon](docs/images/status-working.png) | ![Completed Beacon](docs/images/status-completed.png) |
-| All task lamps are off. | The amber lamp breathes. | The green lamp stays lit until confirmed. |
+| ![空闲状态](docs/images/status-idle.png) | ![工作状态](docs/images/status-working.png) | ![已完成状态](docs/images/status-completed.png) |
+| 三个任务灯均熄灭。 | 琥珀色灯缓慢呼吸。 | 绿色灯常亮，直到完成被确认。 |
 
-| State | Signal | Meaning |
+| 状态 | 信号 | 含义 |
 | --- | --- | --- |
-| Monitoring unavailable | Steady red | Desktop monitoring evidence is missing, stale, or incompatible. |
-| Approval | Flashing green | A task needs approval, authorization, or an answer. |
-| Working | Breathing amber | At least one task is active. |
-| Completed | Steady green | At least one successful completion has not been confirmed. |
-| Idle | All lamps off | No approval, active, or unconfirmed-completion task remains. |
+| 监测不可用 | 红灯常亮 | Desktop 监测证据缺失、过期或不兼容。 |
+| 审批 | 绿灯闪烁 | 任务需要你的审批、授权或回答。 |
+| 工作 | 琥珀灯呼吸 | 至少一个任务正在运行。 |
+| 已完成 | 绿灯常亮 | 至少一个成功完成尚未确认。 |
+| 空闲 | 所有灯熄灭 | 没有审批、工作中或未确认完成的任务。 |
 
-When tasks differ, this order determines the displayed signal. With macOS **Reduce Motion** enabled, animations stop; Approval uses a double green ring so it remains distinct from Completed.
+多个任务处于不同状态时，以上顺序决定主状态。若 macOS 开启 **减少动态效果**，所有动画都会停止；“审批”会显示为双层绿色圆环，以便与“已完成”的实心绿灯区分。
 
-## Features
+## 功能
 
-- Monitors **Codex Desktop tasks only**; CLI, IDE-extension, and remote tasks are excluded.
-- Keeps a small floating panel visible across Spaces and eligible full-screen apps, with edge snapping and no Dock or menu-bar presence.
-- Opens or focuses the relevant Codex task when clicked, then confirms existing completions.
-- Shows aggregate task counts, quota windows, reset times, update time, and monitoring errors on hover. Task titles are hidden by default.
-- Selects the shortest currently reported quota window automatically; it does not assume a fixed five-hour or weekly window.
-- Alerts on a confirmable quota reset with a notification, optional sound, a five-second frame pulse, and a temporary message. Nearby resets are combined into one alert.
-- Supports standard (`62 × 229 pt`) and compact (`24 × 88 pt`) sizes, a configurable global shortcut, launch at login, and separate sounds for Approval, Completed, and quota reset.
+- 仅监测 **Codex Desktop 任务**；不监测 CLI、IDE 扩展或远程任务。
+- 以小型浮动面板常驻在普通窗口上方，跨 Space 与符合条件的全屏应用可见，可吸附到屏幕边缘；不创建 Dock 图标或菜单栏项目。
+- 单击后打开或聚焦相关 Codex 任务，并确认当时已有的完成状态。
+- 悬停可查看任务聚合计数、额度窗口、重置时间、最后更新时间与监测错误；任务标题默认隐藏。
+- 自动选择当前最短的额度窗口；不假定固定存在五小时或每周额度。
+- 检测到可确认的额度重置时，发送通知、可选声音、五秒边框提示和临时消息；相邻重置会合并为一条提醒。
+- 支持标准尺寸（`62 × 229 pt`）、紧凑尺寸（`24 × 88 pt`）、可设置的全局快捷键、登录时启动，以及为“审批”“已完成”“额度重置”分别配置声音。
 
-## Use
+## 使用方式
 
-- **Click** to open or focus the oldest task requiring approval; otherwise, a completed or working task. The click also confirms existing completions.
-- **Hover** to see state counts, quota windows, reset times, last update, and availability errors.
-- **Drag** to any screen edge. Left and right edges are vertical; top and bottom edges are horizontal.
-- **Right-click** for Settings, temporary hide/show, or quit.
-- Press **Control + Option + Command + C** to show or hide Beacon; change the shortcut in Settings if needed.
+- **单击**：优先打开或聚焦等待审批最久的任务；否则选择已完成或工作中的任务，并确认已有完成。
+- **悬停**：查看状态计数、额度窗口、重置时间、最后更新时间与可用性错误。
+- **拖动**：拖到任意屏幕边缘。左右边缘为纵向，上下边缘为横向。
+- **右键**：打开设置、临时隐藏/显示或退出。
+- 默认全局快捷键为 **Control + Option + Command + C**，可在设置中替换。
 
-## Local integration
+## 本地集成
 
-Beacon passively observes the local Codex App Server and never resumes or changes a task, answers approval/input requests, or reads private transcripts. If Settings reports **Monitoring unavailable**, run the diagnostic and select **Repair integration** only when it is offered; then fully quit and reopen Codex Desktop before running the diagnostic again.
+Beacon 是本地 Codex App Server 的被动观察者：不会恢复或修改任务、回复审批/输入请求，也不会读取私有转录记录。若设置中显示“监测不可用”，请运行诊断；仅在提供该选项时选择“修复集成”，随后完全退出并重新打开 Codex Desktop，再次运行诊断。
 
-You can restore the default Desktop integration from Settings at any time.
+你可以随时在设置中恢复默认 Desktop 集成。
 
-## Privacy
+## 隐私
 
-Beacon communicates only with the local Codex App Server. It has no telemetry, crash reporting, cloud sync, or automatic-update check.
+Beacon 只与本地 Codex App Server 通信；不包含遥测、崩溃报告、云同步或自动更新检查。
 
-Its local diagnostic trace records connection lifecycle and protocol/status metadata, but not raw App Server JSON, task IDs or titles, account fields, or local paths. It leaves the Mac only when you explicitly export a timestamped copy from Settings.
+本地诊断日志只保留连接生命周期与协议/状态元数据，不包含原始 App Server JSON、任务 ID 或标题、账户字段或本地路径。仅在你于设置中明确导出带时间戳的副本后，日志才会离开本机。
 
-## Development
+## 开发
 
-Development requires Xcode 16 or later. From the repository root:
+开发需要 Xcode 16 或更高版本。在仓库根目录执行：
 
 ```sh
-# Run the test suite
+# 运行测试
 swift test
 
-# Assemble a release application bundle at .build/CodexBeacon.app
+# 组装 release 应用包，产物位于 .build/CodexBeacon.app
 ./scripts/build-app.sh
 ```
 
-## Learn more
+## 了解更多
 
-See [the acceptance record](docs/acceptance/first-local-milestone.md) for compatibility checks and the macOS window matrix, and [docs/PRODUCT.md](docs/PRODUCT.md) for product details and scope.
+详细的兼容性检查与 macOS 窗口矩阵见[验收记录](docs/acceptance/first-local-milestone.md)；产品细节和范围见 [docs/PRODUCT.md](docs/PRODUCT.md)。
