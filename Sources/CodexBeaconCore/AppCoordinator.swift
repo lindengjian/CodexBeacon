@@ -240,6 +240,7 @@ public final class AppCoordinator {
 
   private func updateHoverDetail() {
     let titles = taskMonitor.allTaskTitles
+    let sessionIds = taskMonitor.allTaskSessionIds
     let waitingTasks = taskMonitor.waitingTasks
     let workingIDs = taskMonitor.workingTaskIDs
     let completedIDs = taskMonitor.unconfirmedCompletionTaskIDs
@@ -251,15 +252,18 @@ public final class AppCoordinator {
       tasks.append(HoverTaskEntry(
         threadID: waiting.threadID,
         title: titles[waiting.threadID] ?? waiting.title,
+        sessionId: sessionIds[waiting.threadID],
         state: .waitingForYou
       ))
     }
     for id in workingIDs {
       guard !waitingTasks.contains(where: { $0.threadID == id }) else { continue }
-      tasks.append(HoverTaskEntry(threadID: id, title: titles[id], state: .working))
+      tasks.append(HoverTaskEntry(
+        threadID: id, title: titles[id], sessionId: sessionIds[id], state: .working))
     }
     for id in completedIDs {
-      tasks.append(HoverTaskEntry(threadID: id, title: titles[id], state: .completed))
+      tasks.append(HoverTaskEntry(
+        threadID: id, title: titles[id], sessionId: sessionIds[id], state: .completed))
     }
 
     let taskError: String? =

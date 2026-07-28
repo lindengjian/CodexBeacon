@@ -538,6 +538,9 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
       let threadID = params["threadId"] as? String
     {
       fields.append("thread_id=\(threadID)")
+      if let threadName = params["threadName"] as? String {
+        fields.append("thread_name=\(threadName)")
+      }
       fields.append(contentsOf: threadStatusFields(params["status"]))
     }
 
@@ -554,6 +557,9 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
         }
         if let threadSource = thread["threadSource"] as? String {
           fields.append("thread_source=\(threadSource)")
+        }
+        if let threadName = thread["threadName"] as? String {
+          fields.append("thread_name=\(threadName)")
         }
         if let ephemeral = thread["ephemeral"] as? Bool {
           fields.append("ephemeral=\(ephemeral)")

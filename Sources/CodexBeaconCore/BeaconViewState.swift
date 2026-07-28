@@ -134,11 +134,18 @@ public enum HoverTaskState: Equatable, Sendable {
 public struct HoverTaskEntry: Equatable, Sendable {
   public let threadID: String
   public let title: String?
+  public let sessionId: String?
   public let state: HoverTaskState
 
-  public init(threadID: String, title: String?, state: HoverTaskState) {
+  public init(
+    threadID: String,
+    title: String?,
+    sessionId: String? = nil,
+    state: HoverTaskState
+  ) {
     self.threadID = threadID
     self.title = title
+    self.sessionId = sessionId
     self.state = state
   }
 }

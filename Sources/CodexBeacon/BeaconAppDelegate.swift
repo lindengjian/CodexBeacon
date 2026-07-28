@@ -186,7 +186,7 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
     let state = coordinator.viewState
     panel?.update(state: state)
     diagnosticStore.record(
-      "ui panel_updated status=\(state.status.traceName) amber=\(state.lights[1].illumination.traceName) visible=\(state.isVisible)"
+      "ui panel_updated status=\(state.status.traceName) amber=\(state.lights[1].illumination.traceName) visible=\(state.isVisible) show_task_titles=\(state.showTaskTitles) hover_tasks=\(state.hoverDetail?.tasks.count ?? 0) hover_show_titles=\(state.hoverDetail?.showTaskTitles ?? false)"
     )
   }
 

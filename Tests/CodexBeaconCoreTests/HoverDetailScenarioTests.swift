@@ -102,7 +102,7 @@ struct HoverDetailScenarioTests {
     #expect(detail.taskError == "任务监测不可用")
   }
 
-  @Test("show task titles defaults to false and titles are hidden")
+  @Test("show task titles defaults to false but titles still propagate in task entries")
   func showTaskTitlesDefaultsFalse() throws {
     let coordinator = AppCoordinator()
 
@@ -115,6 +115,8 @@ struct HoverDetailScenarioTests {
     let detail = try #require(coordinator.viewState.hoverDetail)
     #expect(!detail.showTaskTitles)
     #expect(coordinator.viewState.showTaskTitles == false)
+    let task = try #require(detail.tasks.first)
+    #expect(task.title == "Fix the bug")
   }
 
   @Test("enabling show task titles exposes titles in hover detail")
@@ -137,7 +139,7 @@ struct HoverDetailScenarioTests {
     #expect(task.title == "Fix the bug")
   }
 
-  @Test("disabling show task titles after enabling removes title visibility")
+  @Test("disabling show task titles does not clear titles from task entries")
   func disableShowTaskTitles() throws {
     let coordinator = AppCoordinator(showTaskTitles: true)
 
@@ -152,6 +154,8 @@ struct HoverDetailScenarioTests {
     let detail = try #require(coordinator.viewState.hoverDetail)
     #expect(!detail.showTaskTitles)
     #expect(!coordinator.viewState.showTaskTitles)
+    let task = try #require(detail.tasks.first)
+    #expect(task.title == "Fix the bug")
   }
 
   @Test("hover detail tasks reflect waiting, working, and completed states")
@@ -183,6 +187,57 @@ struct HoverDetailScenarioTests {
     let detail = try #require(coordinator.viewState.hoverDetail)
     #expect(detail.tasks.contains(where: { $0.threadID == "w1" && $0.state == .completed }))
     #expect(detail.tasks.contains(where: { $0.threadID == "wf1" && $0.state == .waitingForYou }))
+  }
+
+  @Test("hover detail task entries carry sessionId from protocol thread response")
+  func hoverDetailCarriesSessionId() throws {
+    let coordinator = AppCoordinator()
+
+    establishSnapshot(
+      for: coordinator,
+      threads: ["w1": .working, "wf1": .waitingOnApproval],
+      titles: ["w1": "Fix the bug", "wf1": "Review PR"],
+      sessionIds: ["w1": "sess-abc", "wf1": "sess-def"]
+    )
+
+    let detail = try #require(coordinator.viewState.hoverDetail)
+    let workingTask = try #require(detail.tasks.first(where: { $0.threadID == "w1" }))
+    #expect(workingTask.sessionId == "sess-abc")
+    #expect(workingTask.title == "Fix the bug")
+    let waitingTask = try #require(detail.tasks.first(where: { $0.threadID == "wf1" }))
+    #expect(waitingTask.sessionId == "sess-def")
+    #expect(waitingTask.title == "Review PR")
+  }
+
+  @Test("threadName from status notification captured as task title")
+  func threadNameFromStatusNotification() throws {
+    let coordinator = AppCoordinator(showTaskTitles: true)
+
+    establishSnapshot(
+      for: coordinator,
+      threads: ["t1": .working],
+      titles: ["t1": "Initial Title"]
+    )
+
+    // Status notification carries threadName; it should update the title
+    sendStatus(.idle, for: "t1", to: coordinator, threadName: "Updated Name")
+
+    for request in coordinator.drainAppServerRequests() {
+      coordinator.handle(
+        .task(
+          .appServerMessage(
+            """
+            {"id":\(request.id),"result":{"data":[{"id":"turn-t1","status":"completed"}]}}
+            """
+          )
+        )
+      )
+    }
+
+    let detail = try #require(coordinator.viewState.hoverDetail)
+    let task = try #require(detail.tasks.first(where: { $0.threadID == "t1" }))
+    #expect(task.title == "Updated Name")
+    #expect(task.state == .completed)
   }
 
   @Test("aggregate counts description omits zero counts")
@@ -226,7 +281,8 @@ struct HoverDetailScenarioTests {
   private func establishSnapshot(
     for coordinator: AppCoordinator,
     threads: [String: RuntimeState],
-    titles: [String: String] = [:]
+    titles: [String: String] = [:],
+    sessionIds: [String: String] = [:]
   ) {
     coordinator.handle(
       .task(.monitoringConnectionEstablished(protocolCompatible: true))
@@ -255,11 +311,17 @@ struct HoverDetailScenarioTests {
       } else {
         titleJSON = ""
       }
+      let sessionIdJSON: String
+      if let sessionId = sessionIds[threadID] {
+        sessionIdJSON = ",\"sessionId\":\"\(sessionId)\""
+      } else {
+        sessionIdJSON = ""
+      }
       coordinator.handle(
         .task(
           .appServerMessage(
             """
-            {"id":\(request.id),"result":{"thread":{"id":"\(threadID)","source":"vscode","ephemeral":false,"parentThreadId":null,"status":\(state.json)\(titleJSON)}}}
+            {"id":\(request.id),"result":{"thread":{"id":"\(threadID)","source":"vscode","ephemeral":false,"parentThreadId":null,"status":\(state.json)\(titleJSON)\(sessionIdJSON)}}}
             """
           )
         )
@@ -270,13 +332,20 @@ struct HoverDetailScenarioTests {
   private func sendStatus(
     _ state: RuntimeState,
     for threadID: String,
-    to coordinator: AppCoordinator
+    to coordinator: AppCoordinator,
+    threadName: String? = nil
   ) {
+    let nameJSON: String
+    if let threadName {
+      nameJSON = ",\"threadName\":\"\(threadName)\""
+    } else {
+      nameJSON = ""
+    }
     coordinator.handle(
       .task(
         .appServerMessage(
           """
-          {"method":"thread/status/changed","params":{"threadId":"\(threadID)","status":\(state.json)}}
+          {"method":"thread/status/changed","params":{"threadId":"\(threadID)","status":\(state.json)\(nameJSON)}}
           """
         )
       )

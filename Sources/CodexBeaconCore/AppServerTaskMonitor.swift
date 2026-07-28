@@ -35,6 +35,7 @@ struct AppServerTaskMonitor {
   private var outstandingInitialReads: Set<String> = []
   private var snapshotThreadIDs: Set<String>?
   private var completedTaskIDs: Set<String> = []
+  private var pendingThreadNames: [String: String] = [:]
   private var state = MonitoringState.notStarted
   init(requestIDGenerator: AppServerRequestIDGenerator) {
     self.requestIDGenerator = requestIDGenerator
@@ -62,11 +63,23 @@ struct AppServerTaskMonitor {
   var allTaskTitles: [String: String] {
     var titles: [String: String] = [:]
     for thread in observedThreads.values {
-      if thread.isUserVisibleRoot, let title = thread.title {
-        titles[thread.id] = title
+      if thread.isUserVisibleRoot {
+        if let title = thread.title ?? pendingThreadNames[thread.id] {
+          titles[thread.id] = title
+        }
       }
     }
     return titles
+  }
+
+  var allTaskSessionIds: [String: String] {
+    var ids: [String: String] = [:]
+    for thread in observedThreads.values {
+      if thread.isUserVisibleRoot, let sessionId = thread.sessionId {
+        ids[thread.id] = sessionId
+      }
+    }
+    return ids
   }
 
   var unconfirmedCompletionTaskIDs: Set<String> {
@@ -148,6 +161,10 @@ struct AppServerTaskMonitor {
     }
 
     do {
+      // Capture threadName from any message (notification, response, or
+      // unclassified) so it is available when the thread is first read.
+      capturePendingThreadName(from: data)
+
       let header = try JSONDecoder().decode(MessageHeader.self, from: data)
       if let method = header.method {
         guard
@@ -290,11 +307,15 @@ struct AppServerTaskMonitor {
     }
     observedThreads[thread.id] = updatedThread(
       id: thread.id,
+      sessionId: thread.sessionId,
       isUserVisibleRoot: isUserVisibleRoot,
       taskState: taskState,
       previous: observedThreads[thread.id],
       observedAt: observedAt,
       title: thread.title
+        ?? thread.threadName
+        ?? thread.name
+        ?? pendingThreadNames[thread.id]
     )
     outstandingInitialReads.remove(thread.id)
 
@@ -381,18 +402,25 @@ struct AppServerTaskMonitor {
 
     guard let previousThread else {
       state = .collectingEvidence
+      if let threadName = notification.params.threadName {
+        pendingThreadNames[threadID] = threadName
+      }
       if !hasPendingRead(for: threadID) {
         requestThread(threadID, observedAt: observedAt)
       }
       return .monitoringUnavailable
     }
 
+    let resolvedTitle = notification.params.threadName
+      ?? pendingThreadNames[threadID]
+      ?? previousThread.title
     observedThreads[threadID] = updatedThread(
       id: threadID,
       isUserVisibleRoot: previousThread.isUserVisibleRoot,
       taskState: taskState,
       previous: previousThread,
-      observedAt: observedAt
+      observedAt: observedAt,
+      title: resolvedTitle
     )
     if taskState == .idle, previousThread.taskState.isActive,
       !hasPendingLatestTurnRead(for: threadID)
@@ -453,6 +481,52 @@ struct AppServerTaskMonitor {
         return false
       }
       return true
+    }
+  }
+
+  /// Extracts threadName from any message and caches it for later use.
+  /// Handles three paths in priority order:
+  /// 1. Notification params:   params.threadName (or params.thread_name)
+  /// 2. Nested thread object:  params.thread.threadName
+  /// 3. Response result:       result.thread.threadName
+  ///
+  /// Path 3 is essential for re-activated sessions whose status-change
+  /// notification may omit threadName; the thread/read response still has it.
+  private mutating func capturePendingThreadName(from data: Data) {
+    guard let raw = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+    else {
+      return
+    }
+
+    // Path 1 — notification params (e.g. thread/status/changed, thread/updated)
+    if let params = raw["params"] as? [String: Any],
+      let threadID = (params["threadId"] as? String) ?? (params["thread_id"] as? String)
+    {
+      if let threadName = params["threadName"] as? String
+        ?? params["thread_name"] as? String
+      {
+        pendingThreadNames[threadID] = threadName
+        return
+      }
+      // Path 2 — nested thread object: params.thread.threadName
+      if let thread = params["thread"] as? [String: Any],
+        let threadName = thread["threadName"] as? String
+          ?? thread["thread_name"] as? String
+      {
+        pendingThreadNames[threadID] = threadName
+        return
+      }
+    }
+
+    // Path 3 — response result (e.g. thread/read)
+    if let result = raw["result"] as? [String: Any],
+      let thread = result["thread"] as? [String: Any],
+      let threadID = thread["id"] as? String,
+      let threadName = thread["threadName"] as? String
+        ?? thread["thread_name"] as? String
+        ?? thread["name"] as? String
+    {
+      pendingThreadNames[threadID] = threadName
     }
   }
 
@@ -518,6 +592,7 @@ struct AppServerTaskMonitor {
 
   private func updatedThread(
     id: String,
+    sessionId: String? = nil,
     isUserVisibleRoot: Bool,
     taskState: ObservedTaskState,
     previous: ObservedThread?,
@@ -526,6 +601,7 @@ struct AppServerTaskMonitor {
   ) -> ObservedThread {
     ObservedThread(
       id: id,
+      sessionId: sessionId ?? previous?.sessionId,
       isUserVisibleRoot: isUserVisibleRoot,
       taskState: taskState,
       waitingSince: taskState == .waitingForYou
@@ -567,6 +643,7 @@ private enum AppServerActiveFlag: String {
 
 private struct ObservedThread {
   let id: String
+  let sessionId: String?
   let isUserVisibleRoot: Bool
   let taskState: ObservedTaskState
   let waitingSince: Date?
@@ -617,12 +694,15 @@ private struct ThreadReadResult: Decodable {
 
 private struct ProtocolThread: Decodable {
   let id: String
+  let sessionId: String?
   let source: ProtocolThreadSource?
   let threadSource: String?
   let ephemeral: Bool
   let parentThreadId: String?
   let status: ProtocolThreadStatus?
   let title: String?
+  let threadName: String?
+  let name: String?
 }
 
 private enum ProtocolThreadSource: Decodable {
@@ -658,10 +738,12 @@ private struct ThreadStatusChangedNotification: Decodable {
 private struct ThreadStatusChangedParameters: Decodable {
   let threadID: String
   let status: ProtocolThreadStatus
+  let threadName: String?
 
   private enum CodingKeys: String, CodingKey {
     case threadID = "threadId"
     case status
+    case threadName
   }
 }
 

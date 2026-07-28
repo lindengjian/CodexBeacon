@@ -312,7 +312,7 @@ struct HoverDetailView: View {
           .font(.system(size: 12, weight: .semibold))
       }
 
-      if !detail.tasks.isEmpty {
+      if detail.showTaskTitles, !detail.tasks.isEmpty {
         taskList
       }
 
@@ -387,8 +387,12 @@ struct HoverDetailView: View {
           Circle()
             .fill(taskStateColor(task.state))
             .frame(width: 6, height: 6)
-          if detail.showTaskTitles, let title = task.title {
+          if let title = task.title {
             Text(title)
+              .font(.system(size: 11))
+              .lineLimit(1)
+          } else if let sessionId = task.sessionId {
+            Text(sessionId)
               .font(.system(size: 11))
               .lineLimit(1)
           } else {
