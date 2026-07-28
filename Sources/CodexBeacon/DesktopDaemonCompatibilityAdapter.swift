@@ -167,6 +167,11 @@ final class LocalDiagnosticStore {
   let directory: URL
   let fileURL: URL
   private static let writeLock = NSLock()
+  private static let isoFormatter: ISO8601DateFormatter = {
+    let f = ISO8601DateFormatter()
+    f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return f
+  }()
 
   /// Entries older than this duration are pruned on each write.
   private let retentionDuration: TimeInterval = 300 // 5 minutes
@@ -267,7 +272,7 @@ final class LocalDiagnosticStore {
   private func parseTimestamp(from line: String) -> Date? {
     guard line.count >= 20 else { return nil }
     let prefix = String(line.prefix(while: { $0 != " " }))
-    return ISO8601DateFormatter().date(from: prefix)
+    return Self.isoFormatter.date(from: prefix)
   }
 
   /// Copies the current trace into a user-selected directory. The timestamped
@@ -303,7 +308,7 @@ final class LocalDiagnosticStore {
   }
 
   private func timestamp(for date: Date) -> String {
-    ISO8601DateFormatter().string(from: date)
+    Self.isoFormatter.string(from: date)
   }
 
   private func exportTimestamp(for date: Date) -> String {
