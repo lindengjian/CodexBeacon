@@ -1,5 +1,6 @@
 import AppKit
 import CodexBeaconCore
+import CoreImage
 import SwiftUI
 
 @MainActor
@@ -55,12 +56,34 @@ final class BeaconPanel: NSPanel {
     isMovableByWindowBackground = true
     isOpaque = false
     backgroundColor = .clear
-    hasShadow = true
+    hasShadow = false
     isReleasedWhenClosed = false
     animationBehavior = .none
-    contentView = NSHostingView(
+
+    let rootView = NSView(frame: contentRect)
+    rootView.wantsLayer = true
+    rootView.layer?.backgroundColor = NSColor.clear.cgColor
+
+    let glassView = NSVisualEffectView(frame: contentRect)
+    glassView.blendingMode = .behindWindow
+    glassView.material = .popover
+    glassView.appearance = NSAppearance(named: .vibrantDark)
+    glassView.state = .active
+    glassView.alphaValue = BeaconGlassStyle.visualEffectAlpha
+    glassView.autoresizingMask = [.width, .height]
+    glassView.wantsLayer = true
+    applyGlassMask(to: glassView, size: contentRect.size, surface: state.surface)
+
+    let hostingView = NSHostingView(
       rootView: IdleBeaconView(stateStore: stateStore, onActivate: onActivate)
     )
+    hostingView.frame = glassView.bounds
+    hostingView.autoresizingMask = [.width, .height]
+    hostingView.wantsLayer = true
+    hostingView.layer?.backgroundColor = NSColor.clear.cgColor
+    rootView.addSubview(glassView)
+    rootView.addSubview(hostingView)
+    contentView = rootView
   }
 
   override func rightMouseDown(with event: NSEvent) {
@@ -92,10 +115,17 @@ final class BeaconPanel: NSPanel {
       height: placement.frame.height
     )
     setFrame(frame, display: true)
+    if let glassView = glassView {
+      applyGlassMask(to: glassView, size: frame.size, surface: stateStore.state.surface)
+    }
   }
 
   func update(state: BeaconViewState) {
     stateStore.state = state
+    if let glassView = glassView {
+      let size = NSSize(width: state.dimensions.width, height: state.dimensions.height)
+      applyGlassMask(to: glassView, size: size, surface: state.surface)
+    }
   }
 
   // MARK: - Border pulse
@@ -107,7 +137,10 @@ final class BeaconPanel: NSPanel {
     guard let contentView else { return }
 
     contentView.wantsLayer = true
-    contentView.layer?.cornerRadius = 30
+    contentView.layer?.cornerRadius = glassCornerRadius(
+      for: stateStore.state.surface,
+      size: contentView.bounds.size
+    )
     contentView.layer?.masksToBounds = true
 
     // Remove any in-flight border animation.
@@ -164,5 +197,48 @@ final class BeaconPanel: NSPanel {
     layer.removeAnimation(forKey: "resetBorderPulse")
     layer.borderWidth = 0
     layer.borderColor = CGColor.clear
+  }
+
+  private var glassView: NSVisualEffectView? {
+    contentView?.subviews.compactMap { $0 as? NSVisualEffectView }.first
+  }
+
+  private func applyGlassMask(
+    to glassView: NSVisualEffectView,
+    size: NSSize,
+    surface: BeaconSurfaceState
+  ) {
+    let cornerRadius = glassCornerRadius(for: surface, size: size)
+    glassView.layer?.cornerRadius = cornerRadius
+    glassView.layer?.masksToBounds = true
+    glassView.layer?.backgroundFilters = [Self.gaussianBlurFilter()]
+    glassView.maskImage = Self.roundedMaskImage(size: size, cornerRadius: cornerRadius)
+  }
+
+  private func glassCornerRadius(for surface: BeaconSurfaceState, size: NSSize) -> CGFloat {
+    let requested = switch surface.shape {
+    case .roundedRectangle(let cornerRadius):
+      CGFloat(cornerRadius)
+    }
+    return min(requested, min(size.width, size.height) / 2)
+  }
+
+  private static func roundedMaskImage(size: NSSize, cornerRadius: CGFloat) -> NSImage {
+    let image = NSImage(size: size)
+    image.lockFocus()
+    NSColor.white.setFill()
+    NSBezierPath(
+      roundedRect: NSRect(origin: .zero, size: size),
+      xRadius: cornerRadius,
+      yRadius: cornerRadius
+    ).fill()
+    image.unlockFocus()
+    return image
+  }
+
+  private static func gaussianBlurFilter() -> CIFilter {
+    let filter = CIFilter(name: "CIGaussianBlur") ?? CIFilter()
+    filter.setValue(BeaconGlassStyle.backgroundBlurRadius, forKey: kCIInputRadiusKey)
+    return filter
   }
 }

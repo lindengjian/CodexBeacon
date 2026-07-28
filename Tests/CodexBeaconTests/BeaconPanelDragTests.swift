@@ -1,4 +1,6 @@
 import AppKit
+import CoreImage
+import SwiftUI
 import Testing
 
 @testable import CodexBeacon
@@ -6,6 +8,36 @@ import Testing
 
 @MainActor
 struct BeaconPanelDragTests {
+  @Test("Beacon panel uses behind-window visual effect backing for translucent glass")
+  func beaconPanelUsesBehindWindowVisualEffectBacking() {
+    _ = NSApplication.shared
+    let panel = BeaconPanel(state: .idle, onActivate: {}, onDragEnded: {})
+    defer { panel.close() }
+
+    #expect(!panel.hasShadow)
+    let visualEffectView = panel.contentView?.subviews.compactMap { $0 as? NSVisualEffectView }.first
+    #expect(visualEffectView != nil)
+    #expect(visualEffectView?.blendingMode == .behindWindow)
+    #expect(visualEffectView?.material == .popover)
+    #expect(visualEffectView?.state == .active)
+    #expect(visualEffectView?.alphaValue == CGFloat(BeaconGlassStyle.visualEffectAlpha))
+    #expect(visualEffectView?.appearance?.name == .vibrantDark)
+    #expect(visualEffectView?.maskImage != nil)
+    let blurFilter = visualEffectView?.layer?.backgroundFilters?.compactMap { $0 as? CIFilter }
+      .first { $0.name == "CIGaussianBlur" }
+    #expect(blurFilter?.value(forKey: kCIInputRadiusKey) as? Double == BeaconGlassStyle.backgroundBlurRadius)
+    #expect(visualEffectView?.subviews.isEmpty == true)
+    #expect(panel.contentView?.subviews.contains { $0 is NSHostingView<IdleBeaconView> } == true)
+    #expect(!(panel.contentView is NSVisualEffectView))
+  }
+
+  @Test("Beacon glass blurs the backdrop without raw window alpha passthrough")
+  func beaconGlassBlursBackdropWithoutRawWindowAlphaPassthrough() {
+    #expect(BeaconGlassStyle.visualEffectAlpha == 1.0)
+    #expect(BeaconGlassStyle.backgroundBlurRadius == 12.0)
+    #expect(BeaconGlassStyle.surfaceTintOpacity == 0.18)
+  }
+
   @Test("releasing a dragged Beacon notifies the placement coordinator")
   func releasingBeaconNotifiesPlacementCoordinator() {
     _ = NSApplication.shared

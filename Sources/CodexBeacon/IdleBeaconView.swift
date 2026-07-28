@@ -7,6 +7,12 @@ private enum BeaconColor {
   static let green = Color(red: 0.17, green: 0.82, blue: 0.36)
 }
 
+enum BeaconGlassStyle {
+  static let visualEffectAlpha = 1.0
+  static let backgroundBlurRadius = 12.0
+  static let surfaceTintOpacity = 0.18
+}
+
 struct IdleBeaconView: View {
   @ObservedObject var stateStore: BeaconViewStateStore
   let onActivate: () -> Void
@@ -125,14 +131,15 @@ private struct BeaconSurface: View {
     case .roundedRectangle(let cornerRadius):
       ZStack {
         RoundedRectangle(cornerRadius: cornerRadius, style: .circular)
-          .fill(.ultraThinMaterial)
+          .fill(Color.clear)
 
         RoundedRectangle(cornerRadius: cornerRadius, style: .circular)
-          .fill(surfaceColor.opacity(0.91))
+          .fill(surfaceColor.opacity(BeaconGlassStyle.surfaceTintOpacity))
 
         RoundedRectangle(cornerRadius: cornerRadius, style: .circular)
-          .strokeBorder(Color.white.opacity(0.14), lineWidth: 1)
+          .strokeBorder(Color.white.opacity(0.22), lineWidth: 1)
       }
+      .shadow(color: .black.opacity(0.26), radius: 10, y: 4)
     }
   }
 
@@ -154,40 +161,58 @@ private struct LightRecess: View {
   }
 
   var body: some View {
-    Circle()
-      .fill(Color.black.opacity(0.56))
-      .overlay {
-        TimelineView(
-          .animation(minimumInterval: 1.0 / 30.0, paused: !logic.shouldAnimate)
-        ) { context in
-          Circle()
-            .fill(color.opacity(logic.showsWaitingRing ? 0 : logic.displayedOpacity(at: context.date)))
-            .padding(diameter > 20 ? 3 : 1.5)
-        }
-      }
-      .overlay {
-        if logic.showsWaitingRing {
-          Circle()
-            .strokeBorder(color.opacity(0.9), lineWidth: diameter > 20 ? 1.5 : 0.75)
-            .padding(diameter > 20 ? 5 : 2.5)
-          Circle()
-            .strokeBorder(color.opacity(0.9), lineWidth: diameter > 20 ? 1.5 : 0.75)
-            .padding(diameter > 20 ? 10 : 4)
-        }
-      }
-      .overlay {
-        if light.showsRecess {
-          Circle()
-            .strokeBorder(color.opacity(0.19), lineWidth: 1)
-        }
-      }
-      .overlay {
+    ZStack {
+      Circle()
+        .fill(.ultraThinMaterial)
+
+      Circle()
+        .fill(Color.black.opacity(0.36))
+
+      Circle()
+        .fill(
+          RadialGradient(
+            colors: [
+              Color.white.opacity(0.1),
+              Color.clear,
+            ],
+            center: .topLeading,
+            startRadius: 1,
+            endRadius: diameter * 0.65
+          )
+        )
+    }
+    .overlay {
+      TimelineView(
+        .animation(minimumInterval: 1.0 / 30.0, paused: !logic.shouldAnimate)
+      ) { context in
         Circle()
-          .strokeBorder(Color.black.opacity(0.8), lineWidth: 2)
-          .padding(1)
+          .fill(color.opacity(logic.showsWaitingRing ? 0 : logic.displayedOpacity(at: context.date)))
+          .padding(diameter > 20 ? 3 : 1.5)
       }
-      .frame(width: diameter, height: diameter)
-      .shadow(color: .black.opacity(0.8), radius: 2, y: 1)
+    }
+    .overlay {
+      if logic.showsWaitingRing {
+        Circle()
+          .strokeBorder(color.opacity(0.9), lineWidth: diameter > 20 ? 1.5 : 0.75)
+          .padding(diameter > 20 ? 5 : 2.5)
+        Circle()
+          .strokeBorder(color.opacity(0.9), lineWidth: diameter > 20 ? 1.5 : 0.75)
+          .padding(diameter > 20 ? 10 : 4)
+      }
+    }
+    .overlay {
+      if light.showsRecess {
+        Circle()
+          .strokeBorder(color.opacity(0.19), lineWidth: 1)
+      }
+    }
+    .overlay {
+      Circle()
+        .strokeBorder(Color.black.opacity(0.8), lineWidth: 2)
+        .padding(1)
+    }
+    .frame(width: diameter, height: diameter)
+    .shadow(color: .black.opacity(0.8), radius: 2, y: 1)
   }
 
   private var color: Color {
