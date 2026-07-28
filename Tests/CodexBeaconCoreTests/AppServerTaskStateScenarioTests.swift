@@ -866,6 +866,49 @@ struct AppServerTaskStateScenarioTests {
     #expect(coordinator.viewState.lights[1].illumination == .steady)
   }
 
+  @Test("a progressing snapshot is not discarded while loaded threads arrive slowly")
+  func progressingSnapshotDoesNotTimeOut() {
+    let coordinator = AppCoordinator()
+    let initialTime = Date(timeIntervalSince1970: 1_753_353_600)
+    coordinator.handle(.time(.advanced(to: initialTime)))
+    coordinator.handle(.task(.monitoringConnectionEstablished(protocolCompatible: true)))
+    let loadedListRequest = coordinator.drainAppServerRequests().first!
+    coordinator.handle(
+      .task(.appServerMessage("""
+        {"id":\(loadedListRequest.id),"result":{"data":["first-idle","second-idle","working-thread"]}}
+        """))
+    )
+    let readRequests = Dictionary(
+      uniqueKeysWithValues: coordinator.drainAppServerRequests().map { ($0.threadID!, $0) }
+    )
+
+    coordinator.handle(.time(.advanced(to: initialTime.addingTimeInterval(4))))
+    coordinator.handle(
+      .task(.appServerMessage("""
+        {"id":\(readRequests["first-idle"]!.id),"result":{"thread":{"id":"first-idle","source":"vscode","ephemeral":false,"parentThreadId":null,"status":{"type":"idle"}}}}
+        """))
+    )
+
+    coordinator.handle(.time(.advanced(to: initialTime.addingTimeInterval(7))))
+    coordinator.handle(.task(.monitoringSnapshotRequested))
+    #expect(coordinator.drainAppServerRequests().isEmpty)
+
+    coordinator.handle(.time(.advanced(to: initialTime.addingTimeInterval(8))))
+    coordinator.handle(
+      .task(.appServerMessage("""
+        {"id":\(readRequests["second-idle"]!.id),"result":{"thread":{"id":"second-idle","source":"vscode","ephemeral":false,"parentThreadId":null,"status":{"type":"idle"}}}}
+        """))
+    )
+    coordinator.handle(.time(.advanced(to: initialTime.addingTimeInterval(12))))
+    coordinator.handle(
+      .task(.appServerMessage("""
+        {"id":\(readRequests["working-thread"]!.id),"result":{"thread":{"id":"working-thread","source":"vscode","ephemeral":false,"parentThreadId":null,"status":{"type":"active","activeFlags":[]}}}}
+        """))
+    )
+
+    #expect(coordinator.viewState.status == .working)
+  }
+
   @Test("unrelated App Server notifications do not invalidate task evidence")
   func unrelatedNotificationDoesNotChangeAggregate() {
     let coordinator = AppCoordinator()

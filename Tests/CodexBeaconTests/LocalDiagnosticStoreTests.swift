@@ -4,6 +4,24 @@ import Testing
 @testable import CodexBeacon
 
 struct LocalDiagnosticStoreTests {
+  @Test("recording diagnostic data never blocks the caller")
+  func recordsAsynchronously() throws {
+    let directory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("CodexBeaconTests-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+
+    let queue = DispatchQueue(label: "CodexBeaconTests.diagnostic-recording")
+    let store = LocalDiagnosticStore(directory: directory, writeQueue: queue)
+    store.beginRun(runID: "asynchronous-test")
+
+    queue.suspend()
+    defer { queue.resume() }
+    store.record("entry written after the caller returns")
+
+    let trace = try String(contentsOf: store.fileURL, encoding: .utf8)
+    #expect(!trace.contains("entry written after the caller returns"))
+  }
+
   @Test("a diagnostic run keeps every entry in chronological order")
   func recordsEntireDiagnosticRun() throws {
     let directory = FileManager.default.temporaryDirectory
@@ -18,6 +36,7 @@ struct LocalDiagnosticStoreTests {
       "coordinator state_resolved status_after=working working=1 waiting=0 completed=0 visible=true",
       at: start.addingTimeInterval(2)
     )
+    store.flush()
 
     let trace = try String(contentsOf: store.fileURL, encoding: .utf8)
 
@@ -30,7 +49,7 @@ struct LocalDiagnosticStoreTests {
     )
   }
 
-  @Test("entries older than 5 minutes are pruned after each write")
+  @Test("entries older than 5 minutes are pruned by a background flush")
   func prunesEntriesOlderThanRetentionWindow() throws {
     let directory = FileManager.default.temporaryDirectory
       .appendingPathComponent("CodexBeaconTests-\(UUID().uuidString)")
@@ -46,6 +65,7 @@ struct LocalDiagnosticStoreTests {
     store.record("recent entry", at: now.addingTimeInterval(-180))
     // Write a current entry — should survive and trigger pruning.
     store.record("current entry", at: now)
+    store.flush()
 
     let trace = try String(contentsOf: store.fileURL, encoding: .utf8)
 

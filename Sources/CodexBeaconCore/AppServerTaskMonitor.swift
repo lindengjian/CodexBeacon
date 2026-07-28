@@ -31,6 +31,7 @@ struct AppServerTaskMonitor {
   private var requests: [AppServerRequest] = []
   private var pendingRequests: [Int: PendingRequest] = [:]
   private var pendingSnapshotRequestTimes: [Int: Date] = [:]
+  private var latestSnapshotProgressAt: Date?
   private var observedThreads: [String: ObservedThread] = [:]
   private var outstandingInitialReads: Set<String> = []
   private var snapshotThreadIDs: Set<String>?
@@ -121,6 +122,7 @@ struct AppServerTaskMonitor {
     requests.removeAll()
     pendingRequests.removeAll()
     pendingSnapshotRequestTimes.removeAll()
+    latestSnapshotProgressAt = nil
     observedThreads.removeAll()
     outstandingInitialReads.removeAll()
     snapshotThreadIDs = nil
@@ -181,7 +183,9 @@ struct AppServerTaskMonitor {
       guard let pendingRequest = pendingRequests.removeValue(forKey: requestID) else {
         return currentStatus
       }
-      pendingSnapshotRequestTimes.removeValue(forKey: requestID)
+      if pendingSnapshotRequestTimes.removeValue(forKey: requestID) != nil {
+        latestSnapshotProgressAt = observedAt
+      }
 
       if header.error != nil {
         switch pendingRequest {
@@ -221,6 +225,9 @@ struct AppServerTaskMonitor {
   }
 
   private mutating func requestLoadedThreads(observedAt: Date) {
+    if pendingSnapshotRequestTimes.isEmpty {
+      latestSnapshotProgressAt = observedAt
+    }
     let request = AppServerRequest(
       id: requestIDGenerator.next(),
       method: .loadedThreads
@@ -231,6 +238,9 @@ struct AppServerTaskMonitor {
   }
 
   private mutating func requestThread(_ threadID: String, observedAt: Date) {
+    if pendingSnapshotRequestTimes.isEmpty {
+      latestSnapshotProgressAt = observedAt
+    }
     let request = AppServerRequest(
       id: requestIDGenerator.next(),
       method: .readThread,
@@ -562,6 +572,7 @@ struct AppServerTaskMonitor {
     requests.removeAll()
     pendingRequests.removeAll()
     pendingSnapshotRequestTimes.removeAll()
+    latestSnapshotProgressAt = nil
     outstandingInitialReads.removeAll()
     snapshotThreadIDs = nil
     return .monitoringUnavailable
@@ -576,9 +587,11 @@ struct AppServerTaskMonitor {
   }
 
   private func hasTimedOutSnapshotRequest(at observedAt: Date) -> Bool {
-    pendingSnapshotRequestTimes.values.contains {
-      observedAt.timeIntervalSince($0) >= Self.snapshotRequestTimeout
-    }
+    guard !pendingSnapshotRequestTimes.isEmpty else { return false }
+    let lastProgressAt = latestSnapshotProgressAt
+      ?? pendingSnapshotRequestTimes.values.max()
+      ?? observedAt
+    return observedAt.timeIntervalSince(lastProgressAt) >= Self.snapshotRequestTimeout
   }
 
   private mutating func discardTimedOutSnapshotRequests() {
@@ -586,6 +599,7 @@ struct AppServerTaskMonitor {
       pendingRequests.removeValue(forKey: requestID)
     }
     pendingSnapshotRequestTimes.removeAll()
+    latestSnapshotProgressAt = nil
     outstandingInitialReads.removeAll()
     snapshotThreadIDs = nil
   }

@@ -163,26 +163,38 @@ private enum CompatibilityError: LocalizedError {
   }
 }
 
-final class LocalDiagnosticStore {
+/// Mutable diagnostic state is accessed only through `writeQueue`.
+final class LocalDiagnosticStore: @unchecked Sendable {
   let directory: URL
   let fileURL: URL
+  private let writeQueue: DispatchQueue
   private static let writeLock = NSLock()
-  private static nonisolated(unsafe) let isoFormatter: ISO8601DateFormatter = {
+  private static let flushDelay: DispatchTimeInterval = .milliseconds(250)
+  private let isoFormatter: ISO8601DateFormatter = {
     let f = ISO8601DateFormatter()
     f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     return f
   }()
 
-  /// Entries older than this duration are pruned on each write.
+  /// Entries older than this duration are pruned periodically during background flushes.
   private let retentionDuration: TimeInterval = 300 // 5 minutes
+  private let minimumPruneInterval: TimeInterval = 15
+  private var pendingEntries: [(text: String, date: Date)] = []
+  private var writeIsScheduled = false
+  private var lastPrunedAt: Date?
 
   init(
     fileManager: FileManager = .default,
-    directory: URL? = nil
+    directory: URL? = nil,
+    writeQueue: DispatchQueue = .init(
+      label: "com.codexbeacon.task-monitoring-diagnostic",
+      qos: .utility
+    )
   ) {
     self.directory = directory ?? fileManager.homeDirectoryForCurrentUser
       .appendingPathComponent("Library/Application Support/CodexBeacon")
     fileURL = self.directory.appendingPathComponent("task-monitoring-diagnostic.txt")
+    self.writeQueue = writeQueue
   }
 
   func createDirectory() throws {
@@ -193,26 +205,54 @@ final class LocalDiagnosticStore {
   /// later entries append to this file, so the final transition before a
   /// failure is retained instead of overwriting earlier evidence.
   func beginRun(runID: String = UUID().uuidString, startedAt: Date = Date()) {
-    let header = [
-      "# Codex Beacon task-monitoring diagnostic trace",
-      "run_id=\(runID)",
-      "started_at=\(timestamp(for: startedAt))",
-      "format_version=1",
-      "",
-    ].joined(separator: "\n")
-
-    Self.writeLock.lock()
-    defer { Self.writeLock.unlock() }
-    do {
-      try createDirectory()
-      try header.write(to: fileURL, atomically: true, encoding: .utf8)
-    } catch {
-      // Diagnostics must never interfere with passive task observation.
+    writeQueue.sync {
+      let header = [
+        "# Codex Beacon task-monitoring diagnostic trace",
+        "run_id=\(runID)",
+        "started_at=\(timestamp(for: startedAt))",
+        "format_version=1",
+        "",
+      ].joined(separator: "\n")
+      Self.writeLock.lock()
+      defer { Self.writeLock.unlock() }
+      do {
+        try createDirectory()
+        try header.write(to: fileURL, atomically: true, encoding: .utf8)
+        pendingEntries.removeAll()
+        writeIsScheduled = false
+        lastPrunedAt = nil
+      } catch {
+        // Diagnostics must never interfere with passive task observation.
+      }
     }
   }
 
   func record(_ message: String, at date: Date = Date()) {
-    let entry = "\(timestamp(for: date)) \(message)\n"
+    writeQueue.async { [self] in
+      pendingEntries.append(("\(timestamp(for: date)) \(message)\n", date))
+      scheduleWriteIfNeeded()
+    }
+  }
+
+  /// Ensures queued entries are durable before exporting or process exit.
+  func flush() {
+    writeQueue.sync { flushPendingEntries() }
+  }
+
+  private func scheduleWriteIfNeeded() {
+    guard !writeIsScheduled else { return }
+    writeIsScheduled = true
+    writeQueue.asyncAfter(deadline: .now() + Self.flushDelay) { [self] in
+      flushPendingEntries()
+    }
+  }
+
+  private func flushPendingEntries() {
+    writeIsScheduled = false
+    guard !pendingEntries.isEmpty else { return }
+    let entries = pendingEntries.map(\.text).joined()
+    let newestEntryDate = pendingEntries.map(\.date).max() ?? Date()
+    pendingEntries.removeAll(keepingCapacity: true)
 
     Self.writeLock.lock()
     defer { Self.writeLock.unlock() }
@@ -221,15 +261,23 @@ final class LocalDiagnosticStore {
       if FileManager.default.fileExists(atPath: fileURL.path) {
         let handle = try FileHandle(forWritingTo: fileURL)
         try handle.seekToEnd()
-        try handle.write(contentsOf: Data(entry.utf8))
+        try handle.write(contentsOf: Data(entries.utf8))
         try handle.close()
       } else {
-        try entry.write(to: fileURL, atomically: true, encoding: .utf8)
+        try entries.write(to: fileURL, atomically: true, encoding: .utf8)
       }
-      try pruneEntries(at: date)
+      if lastPrunedAt == nil || dateIntervalSinceLastPrune(to: newestEntryDate) >= minimumPruneInterval {
+        try pruneEntries(at: newestEntryDate)
+        lastPrunedAt = newestEntryDate
+      }
     } catch {
       // Diagnostics must never interfere with passive task observation.
     }
+  }
+
+  private func dateIntervalSinceLastPrune(to date: Date) -> TimeInterval {
+    guard let lastPrunedAt else { return .infinity }
+    return date.timeIntervalSince(lastPrunedAt)
   }
 
   /// Removes entries whose timestamp is older than `retentionDuration`
@@ -272,12 +320,13 @@ final class LocalDiagnosticStore {
   private func parseTimestamp(from line: String) -> Date? {
     guard line.count >= 20 else { return nil }
     let prefix = String(line.prefix(while: { $0 != " " }))
-    return Self.isoFormatter.date(from: prefix)
+    return isoFormatter.date(from: prefix)
   }
 
   /// Copies the current trace into a user-selected directory. The timestamped
   /// filename, with a numeric suffix if necessary, preserves prior exports.
   func export(to destinationDirectory: URL, at date: Date = Date()) throws -> URL {
+    flush()
     Self.writeLock.lock()
     defer { Self.writeLock.unlock() }
 
@@ -308,7 +357,7 @@ final class LocalDiagnosticStore {
   }
 
   private func timestamp(for date: Date) -> String {
-    Self.isoFormatter.string(from: date)
+    isoFormatter.string(from: date)
   }
 
   private func exportTimestamp(for date: Date) -> String {

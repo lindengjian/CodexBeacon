@@ -82,6 +82,7 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
   }
 
   func applicationWillTerminate(_ notification: Notification) {
+    diagnosticStore.flush()
     if let screenParametersObserver {
       NotificationCenter.default.removeObserver(screenParametersObserver)
     }

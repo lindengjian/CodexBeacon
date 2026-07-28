@@ -590,10 +590,15 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
   }
 
   private static func singleLineJSON(_ message: String) -> String {
-    message
+    let maximumPayloadCharacters = 16_384
+    let isTruncated = message.count > maximumPayloadCharacters
+    let payload = isTruncated ? String(message.prefix(maximumPayloadCharacters)) : message
+    let escaped = payload
       .replacingOccurrences(of: "\\", with: "\\\\")
       .replacingOccurrences(of: "\n", with: "\\n")
       .replacingOccurrences(of: "\r", with: "\\r")
+    guard isTruncated else { return escaped }
+    return "\(escaped)… [truncated original_characters=\(message.count)]"
   }
 
   private static func findBundledCLI() -> URL? {

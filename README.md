@@ -50,8 +50,9 @@ observes a loaded `vscode` Desktop thread. Local diagnostics are stored at:
 
 The file is reset when Beacon starts monitoring, then appends the complete
 current run: connection lifecycle, every App Server request and response
-(including the original JSON payload), task-state resolution, and the state
-applied to the Beacon panel. After reproducing a status issue, quit Beacon or
+(with JSON payloads retained up to a safe size limit), task-state resolution,
+and the state applied to the Beacon panel. Writes are batched on a utility
+queue so diagnostics never delay task monitoring. After reproducing a status issue, quit Beacon or
 copy this file and share it for diagnosis. You can also select **Export
 Diagnostic Log** in Settings to copy it into a folder you choose; each export
 gets a timestamped filename and preserves earlier exports. It is local-only,
