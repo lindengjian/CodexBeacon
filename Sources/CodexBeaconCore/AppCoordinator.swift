@@ -188,7 +188,7 @@ public final class AppCoordinator {
   /// Drains pending reset events from the view state. The caller (app
   /// delegate) uses these to trigger notifications and border pulse.
   public func drainViewResetEvents() -> [QuotaResetEvent] {
-    viewState.drainResetEvents()
+    return viewState.drainResetEvents()
   }
 
   /// Clears the temporary reset message if it has expired.
