@@ -1,5 +1,9 @@
 # Codex Beacon
 
+<p align="center">
+  <img src="docs/images/codex-beacon-icon-glass.png" width="256" height="266" alt="Codex Beacon 图标">
+</p>
+
 [English README](README.en.md)
 
 Codex Beacon 是一个原生 macOS 工具，用紧凑、非激活的三色状态灯展示 Codex Desktop 任务的聚合状态，并在边缘额度刻度上显示当前账户额度。

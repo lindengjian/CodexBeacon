@@ -1,5 +1,9 @@
 # Codex Beacon
 
+<p align="center">
+  <img src="docs/images/codex-beacon-icon-glass.png" width="256" height="266" alt="Codex Beacon icon">
+</p>
+
 [中文文档](README.md)
 
 Codex Beacon is a native macOS companion for Codex Desktop. It shows the aggregate state of your Codex Desktop tasks as a compact, non-activating traffic light, with your current account quota at the edge.
