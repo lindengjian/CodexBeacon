@@ -167,7 +167,7 @@ final class LocalDiagnosticStore {
   let directory: URL
   let fileURL: URL
   private static let writeLock = NSLock()
-  private static let isoFormatter: ISO8601DateFormatter = {
+  private static nonisolated(unsafe) let isoFormatter: ISO8601DateFormatter = {
     let f = ISO8601DateFormatter()
     f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     return f
