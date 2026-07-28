@@ -80,6 +80,10 @@ Lock Screen, screen saver, and system security or authentication panels are
 explicitly outside the product's coverage claim. Verify that Beacon does not
 promise to remain visible over any of these macOS-protected surfaces.
 
+Owner verification on 2026-07-28: passed. Beacon did not claim to cover or
+interfere with the Lock Screen, screen saver, or system security/authentication
+surfaces.
+
 ## Privacy review
 
 Before delivery, verify all of the following:
