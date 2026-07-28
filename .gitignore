@@ -4,3 +4,6 @@
 DerivedData/
 *.xcuserstate
 AGENTS.md
+.DS_Store
+spikes/simulate-quota-reset.mjs
+spikes/trigger-reset.swift
