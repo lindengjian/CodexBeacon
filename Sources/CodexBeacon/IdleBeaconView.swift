@@ -429,7 +429,7 @@ struct HoverDetailView: View {
     case .working:
       return "工作中"
     case .waitingForYou:
-      return "等待你"
+      return "审批"
     case .completed:
       return "已完成"
     case .monitoringUnavailable:
@@ -480,7 +480,7 @@ struct HoverDetailView: View {
     case .working:
       return "工作中"
     case .waitingForYou:
-      return "等待你"
+      return "审批"
     case .completed:
       return "已完成"
     }

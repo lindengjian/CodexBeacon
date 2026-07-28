@@ -202,7 +202,7 @@ public struct HoverDetailState: Equatable, Sendable {
       parts.append("工作 \(workingCount)")
     }
     if waitingCount > 0 {
-      parts.append("等待你 \(waitingCount)")
+      parts.append("审批 \(waitingCount)")
     }
     if completedCount > 0 {
       parts.append("完成 \(completedCount)")

@@ -1,5 +1,6 @@
 import AppKit
 import Testing
+import UserNotifications
 
 @testable import CodexBeacon
 @testable import CodexBeaconCore
@@ -180,6 +181,29 @@ struct BeaconSettingsScenarioTests {
 
     #expect(previewedSounds == ["Basso"])
     #expect(saved.count == 1)
+  }
+
+  @Test("notification permission errors explain how to recover")
+  func notificationPermissionErrorExplainsHowToRecover() {
+    let error = NSError(
+      domain: UNErrorDomain,
+      code: UNError.Code.notificationsNotAllowed.rawValue
+    )
+
+    #expect(
+      BeaconSystemIntegration.notificationRequestFailureDescription(error)
+        == "系统未允许通知。请从已打包的 CodexBeacon.app 启动；若仍失败，请在系统设置 > 通知中允许 Codex Beacon。"
+    )
+  }
+
+  @Test("a granted notification request updates the status immediately")
+  func grantedNotificationRequestUpdatesStatusImmediately() {
+    #expect(
+      BeaconSystemIntegration.notificationStatusAfterAuthorizationRequest(
+        granted: true,
+        error: nil
+      ) == "已允许"
+    )
   }
 }
 

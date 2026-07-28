@@ -188,7 +188,7 @@ struct BeaconSettingsView: View {
 
   private func soundEventTitle(_ event: BeaconSoundEvent) -> String {
     switch event {
-    case .waiting: "等待你"
+    case .waiting: "审批"
     case .completion: "完成"
     case .quotaReset: "额度重置"
     }

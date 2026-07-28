@@ -141,6 +141,9 @@ struct BeaconIntegrationSettingsSection: View {
         Text("通知权限：\(model.notificationStatus)")
         Button("请求通知权限") { model.requestNotifications() }
           .disabled(model.isWorking)
+        Text("用于在额度重置时发送 macOS 通知；系统只会在首次请求时显示授权提示。")
+          .font(.caption)
+          .foregroundStyle(.secondary)
       }
 
       VStack(alignment: .leading, spacing: 4) {
@@ -310,9 +313,37 @@ enum BeaconSystemIntegration {
   static func requestNotificationAuthorization(
     _ completion: @escaping @MainActor @Sendable (String) -> Void
   ) {
-    UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) { _, _ in
+    UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) {
+      granted,
+      error in
+      if let status = notificationStatusAfterAuthorizationRequest(granted: granted, error: error) {
+        DispatchQueue.main.async {
+          completion(status)
+        }
+        return
+      }
       notificationAuthorizationStatus(completion)
     }
+  }
+
+  static func notificationStatusAfterAuthorizationRequest(
+    granted: Bool,
+    error: Error?
+  ) -> String? {
+    if let error {
+      return notificationRequestFailureDescription(error)
+    }
+    return granted ? "已允许" : nil
+  }
+
+  static func notificationRequestFailureDescription(_ error: Error) -> String {
+    let nsError = error as NSError
+    if nsError.domain == UNErrorDomain,
+      nsError.code == UNError.Code.notificationsNotAllowed.rawValue
+    {
+      return "系统未允许通知。请从已打包的 CodexBeacon.app 启动；若仍失败，请在系统设置 > 通知中允许 Codex Beacon。"
+    }
+    return "请求失败：\(error.localizedDescription)"
   }
 
   static func setLaunchAtLogin(_ enabled: Bool) -> String? {

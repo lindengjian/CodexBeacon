@@ -38,7 +38,7 @@ struct HoverDetailScenarioTests {
     #expect(detail.waitingCount == 1)
     #expect(detail.completedCount == 0)
     #expect(detail.status == .waitingForYou)
-    #expect(detail.aggregateCountsDescription == "工作 2 · 等待你 1")
+    #expect(detail.aggregateCountsDescription == "工作 2 · 审批 1")
   }
 
   @Test("hover detail shows completed tasks in aggregate counts")
@@ -319,7 +319,7 @@ struct HoverDetailScenarioTests {
       showTaskTitles: false
     )
 
-    #expect(state.aggregateCountsDescription == "工作 1 · 等待你 2 · 完成 3")
+    #expect(state.aggregateCountsDescription == "工作 1 · 审批 2 · 完成 3")
   }
 
   // MARK: - Helpers
