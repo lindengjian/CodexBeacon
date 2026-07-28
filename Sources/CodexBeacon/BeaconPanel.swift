@@ -127,7 +127,7 @@ final class BeaconPanel: NSPanel {
       CGColor.clear,
       pulseColor,
       pulseColor,
-      pulseColor.copy(alpha: 0.3),
+      pulseColor.copy(alpha: 0.3) as Any,
       CGColor.clear,
     ]
     colorAnimation.keyTimes = [0, 0.1, 0.7, 0.9, 1.0]
