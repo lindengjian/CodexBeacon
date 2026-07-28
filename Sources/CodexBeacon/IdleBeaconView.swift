@@ -77,7 +77,11 @@ struct IdleBeaconView: View {
   @ViewBuilder
   private var lamps: some View {
     ForEach(Array(state.lights.enumerated()), id: \.offset) { _, light in
-      LightRecess(light: light, diameter: isCompact ? 14 : 32)
+      LightRecess(
+        light: light,
+        diameter: isCompact ? 14 : 32,
+        reducesMotion: state.reducesMotion
+      )
     }
   }
 
@@ -143,14 +147,27 @@ private struct BeaconSurface: View {
 private struct LightRecess: View {
   let light: BeaconLightState
   let diameter: Double
+  let reducesMotion: Bool
+
+  @State private var phaseOpacity: Double = 1.0
 
   var body: some View {
     Circle()
       .fill(Color.black.opacity(0.56))
       .overlay {
         Circle()
-          .fill(color.opacity(illuminationOpacity))
+          .fill(color.opacity(showsWaitingRing ? 0 : displayOpacity))
           .padding(diameter > 20 ? 3 : 1.5)
+      }
+      .overlay {
+        if showsWaitingRing {
+          Circle()
+            .strokeBorder(color.opacity(0.9), lineWidth: diameter > 20 ? 1.5 : 0.75)
+            .padding(diameter > 20 ? 5 : 2.5)
+          Circle()
+            .strokeBorder(color.opacity(0.9), lineWidth: diameter > 20 ? 1.5 : 0.75)
+            .padding(diameter > 20 ? 10 : 4)
+        }
       }
       .overlay {
         if light.showsRecess {
@@ -165,14 +182,54 @@ private struct LightRecess: View {
       }
       .frame(width: diameter, height: diameter)
       .shadow(color: .black.opacity(0.8), radius: 2, y: 1)
+      .onAppear { syncAnimation() }
+      .onChange(of: animationIdentity) { _, _ in syncAnimation() }
   }
 
-  private var illuminationOpacity: Double {
+  private var baseIlluminationOpacity: Double {
     switch light.illumination {
-    case .off:
-      0.08
-    case .steady:
-      1
+    case .off: 0.08
+    case .steady, .breathing, .flashing: 1.0
+    }
+  }
+
+  private var shouldAnimate: Bool {
+    !reducesMotion && (light.illumination == .breathing || light.illumination == .flashing)
+  }
+
+  private var showsWaitingRing: Bool {
+    reducesMotion && light.illumination == .flashing
+  }
+
+  private var animationDuration: Double {
+    light.illumination == .flashing ? 0.7 : 1.8
+  }
+
+  private var minimumOpacity: Double {
+    light.illumination == .flashing ? 0.4 : 0.6
+  }
+
+  private var displayOpacity: Double {
+    shouldAnimate ? phaseOpacity : baseIlluminationOpacity
+  }
+
+  private var animationIdentity: String {
+    "\(light.illumination)-\(reducesMotion)"
+  }
+
+  private func syncAnimation() {
+    var reset = Transaction()
+    reset.disablesAnimations = true
+    withTransaction(reset) {
+      phaseOpacity = 1.0
+    }
+    if shouldAnimate {
+      withAnimation(
+        .easeInOut(duration: animationDuration)
+          .repeatForever(autoreverses: true)
+      ) {
+        phaseOpacity = minimumOpacity
+      }
     }
   }
 

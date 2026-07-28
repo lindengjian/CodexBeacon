@@ -28,7 +28,7 @@ struct CoordinatorEventScenarioTests {
     coordinator.handle(.task(.monitoringRuntimeValidated))
 
     #expect(coordinator.viewState.status == .working)
-    #expect(coordinator.viewState.lights[1].illumination == .steady)
+    #expect(coordinator.viewState.lights[1].illumination == .breathing)
   }
 
   @Test("monitor reconnect retries use bounded backoff and reset after recovery")

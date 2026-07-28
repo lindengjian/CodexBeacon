@@ -749,6 +749,8 @@ private extension BeaconLightIllumination {
     switch self {
     case .off: "off"
     case .steady: "steady"
+    case .breathing: "breathing"
+    case .flashing: "flashing"
     }
   }
 }

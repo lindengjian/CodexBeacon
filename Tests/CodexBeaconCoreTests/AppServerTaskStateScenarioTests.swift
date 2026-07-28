@@ -56,7 +56,7 @@ struct AppServerTaskStateScenarioTests {
       coordinator.viewState.lights
         == [
           .init(color: .red, illumination: .off, showsRecess: true),
-          .init(color: .amber, illumination: .steady, showsRecess: true),
+          .init(color: .amber, illumination: .breathing, showsRecess: true),
           .init(color: .green, illumination: .off, showsRecess: true),
         ]
     )
@@ -104,7 +104,7 @@ struct AppServerTaskStateScenarioTests {
     )
 
     #expect(coordinator.viewState.status == .working)
-    #expect(coordinator.viewState.lights[1].illumination == .steady)
+    #expect(coordinator.viewState.lights[1].illumination == .breathing)
   }
 
   @Test("the aggregate excludes ephemeral, system, and child threads")
@@ -753,7 +753,7 @@ struct AppServerTaskStateScenarioTests {
     )
 
     #expect(coordinator.viewState.status == .working)
-    #expect(coordinator.viewState.lights[1].illumination == .steady)
+    #expect(coordinator.viewState.lights[1].illumination == .breathing)
   }
 
   @Test("a transient thread read error during a refresh retains the last known task state")
@@ -792,7 +792,7 @@ struct AppServerTaskStateScenarioTests {
 
     #expect(coordinator.viewState.status == .working)
     #expect(coordinator.viewState.lights[0].illumination == .off)
-    #expect(coordinator.viewState.lights[1].illumination == .steady)
+    #expect(coordinator.viewState.lights[1].illumination == .breathing)
   }
 
   @Test("an initial thread read error is retried by the next snapshot")
@@ -863,7 +863,7 @@ struct AppServerTaskStateScenarioTests {
     )
 
     #expect(coordinator.viewState.status == .working)
-    #expect(coordinator.viewState.lights[1].illumination == .steady)
+    #expect(coordinator.viewState.lights[1].illumination == .breathing)
   }
 
   @Test("a progressing snapshot is not discarded while loaded threads arrive slowly")

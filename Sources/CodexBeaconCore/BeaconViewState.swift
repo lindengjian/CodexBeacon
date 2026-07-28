@@ -82,9 +82,19 @@ public enum BeaconLightColor: Equatable, Sendable {
   case green
 }
 
+/// How a single Beacon lamp is illuminated.
+///
+/// - `off`: unlit, dim recess only.
+/// - `steady`: solid, no animation. Used for red (monitoring unavailable) and
+///   green (completed).
+/// - `breathing`: slow opacity pulse. Used for amber (working).
+/// - `flashing`: faster, more explicit opacity pulse. Used for green (waiting
+///   for approval / authorization / answer).
 public enum BeaconLightIllumination: Equatable, Sendable {
   case off
   case steady
+  case breathing
+  case flashing
 }
 
 public struct BeaconLightState: Equatable, Sendable {
@@ -317,9 +327,14 @@ public struct BeaconViewState: Equatable, Sendable {
     let redIllumination: BeaconLightIllumination =
       status == .monitoringUnavailable ? .steady : .off
     let amberIllumination: BeaconLightIllumination =
-      status == .working ? .steady : .off
-    let greenIllumination: BeaconLightIllumination =
-      status == .waitingForYou || status == .completed ? .steady : .off
+      status == .working ? .breathing : .off
+    let greenIllumination: BeaconLightIllumination = {
+      switch status {
+      case .waitingForYou: return .flashing
+      case .completed: return .steady
+      default: return .off
+      }
+    }()
 
     return [
       .init(color: .red, illumination: redIllumination, showsRecess: true),
