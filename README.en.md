@@ -57,6 +57,12 @@ When tasks differ, this order determines the displayed signal. With macOS **Redu
 - Alerts on a confirmable quota reset with a notification, optional sound, a five-second frame pulse, and a temporary message. Nearby resets are combined into one alert.
 - Supports standard (`62 × 229 pt`) and compact (`24 × 88 pt`) sizes, a configurable global shortcut, launch at login, and separate sounds for Approval, Completed, and quota reset.
 
+## Planned support
+
+- [ ] Windows support.
+- [ ] Light and dark appearance switching.
+- [ ] Custom themes and skins.
+
 ## Use
 
 - **Click** to open or focus the oldest task requiring approval; otherwise, a completed or working task. The click also confirms existing completions.
