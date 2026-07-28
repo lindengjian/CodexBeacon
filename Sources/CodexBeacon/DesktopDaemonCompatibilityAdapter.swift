@@ -168,6 +168,9 @@ final class LocalDiagnosticStore {
   let fileURL: URL
   private static let writeLock = NSLock()
 
+  /// Entries older than this duration are pruned on each write.
+  private let retentionDuration: TimeInterval = 300 // 5 minutes
+
   init(
     fileManager: FileManager = .default,
     directory: URL? = nil
@@ -218,9 +221,53 @@ final class LocalDiagnosticStore {
       } else {
         try entry.write(to: fileURL, atomically: true, encoding: .utf8)
       }
+      try pruneEntries(at: date)
     } catch {
       // Diagnostics must never interfere with passive task observation.
     }
+  }
+
+  /// Removes entries whose timestamp is older than `retentionDuration`
+  /// from `date`. Header lines (those without a parseable ISO8601
+  /// timestamp) are always preserved. Since entries are written in
+  /// chronological order, we locate the first entry that falls within the
+  /// retention window and drop everything before it.
+  private func pruneEntries(at date: Date) throws {
+    let cutoff = date.addingTimeInterval(-retentionDuration)
+    let content = try String(contentsOf: fileURL, encoding: .utf8)
+    let lines = content.components(separatedBy: "\n")
+
+    // Split header (non-timestamp lines at the top) from entries.
+    var headerEnd = 0
+    for line in lines {
+      if parseTimestamp(from: line) != nil { break }
+      headerEnd += 1
+    }
+    guard headerEnd < lines.count else { return } // no entries yet
+
+    // Find the first entry >= cutoff (entries are chronological).
+    var keepFrom = lines.count
+    for i in headerEnd..<lines.count {
+      guard let ts = parseTimestamp(from: lines[i]) else { continue }
+      if ts >= cutoff {
+        keepFrom = i
+        break
+      }
+    }
+
+    // Keep header + entries from keepFrom onwards. When keepFrom ==
+    // lines.count (all entries too old), the second slice is empty.
+    let kept = Array(lines[0..<headerEnd]) + Array(lines[keepFrom..<lines.count])
+
+    let result = kept.joined(separator: "\n")
+    try result.write(to: fileURL, atomically: true, encoding: .utf8)
+  }
+
+  /// Returns the ISO8601 timestamp at the start of `line`, or nil.
+  private func parseTimestamp(from line: String) -> Date? {
+    guard line.count >= 20 else { return nil }
+    let prefix = String(line.prefix(while: { $0 != " " }))
+    return ISO8601DateFormatter().date(from: prefix)
   }
 
   /// Copies the current trace into a user-selected directory. The timestamped

@@ -97,4 +97,52 @@ final class BeaconPanel: NSPanel {
   func update(state: BeaconViewState) {
     stateStore.state = state
   }
+
+  // MARK: - Border pulse
+
+  /// Triggers a 5-second border pulse animation using the reset accent colour.
+  /// Safe to call when a pulse is already active — the new animation replaces
+  /// the current one.
+  func startBorderPulse() {
+    guard let contentView else { return }
+
+    contentView.wantsLayer = true
+    contentView.layer?.cornerRadius = 30
+    contentView.layer?.masksToBounds = true
+
+    // Remove any in-flight border animation.
+    contentView.layer?.removeAnimation(forKey: "resetBorderPulse")
+
+    let pulseColor = CGColor(red: 0.17, green: 0.82, blue: 0.36, alpha: 1.0)
+
+    let borderAnimation = CAKeyframeAnimation(keyPath: "borderWidth")
+    borderAnimation.values = [0, 3, 3, 0, 0]
+    borderAnimation.keyTimes = [0, 0.1, 0.8, 0.9, 1.0]
+    borderAnimation.duration = 5
+    borderAnimation.isRemovedOnCompletion = true
+    borderAnimation.fillMode = .forwards
+
+    let colorAnimation = CAKeyframeAnimation(keyPath: "borderColor")
+    colorAnimation.values = [
+      CGColor.clear,
+      pulseColor,
+      pulseColor,
+      pulseColor.copy(alpha: 0.3),
+      CGColor.clear,
+    ]
+    colorAnimation.keyTimes = [0, 0.1, 0.7, 0.9, 1.0]
+    colorAnimation.duration = 5
+    colorAnimation.isRemovedOnCompletion = true
+    colorAnimation.fillMode = .forwards
+
+    let group = CAAnimationGroup()
+    group.animations = [borderAnimation, colorAnimation]
+    group.duration = 5
+    group.isRemovedOnCompletion = true
+    group.fillMode = .forwards
+
+    contentView.layer?.borderWidth = 0
+    contentView.layer?.borderColor = CGColor.clear
+    contentView.layer?.add(group, forKey: "resetBorderPulse")
+  }
 }

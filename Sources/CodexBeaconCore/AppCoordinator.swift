@@ -103,6 +103,12 @@ public final class AppCoordinator {
       if quotaHandled {
         viewState.quotaTrack = quotaTrackState(from: quotaMonitor.accountQuota)
         updateHoverDetail()
+        // Drain reset events detected by the quota monitor and surface them
+        // in the view state for the app delegate to process.
+        let resets = quotaMonitor.drainResetEvents()
+        if !resets.isEmpty {
+          viewState.pendingResetEvents.append(contentsOf: resets)
+        }
       }
       let newCompletions = taskMonitor.unconfirmedCompletionTaskIDs.subtracting(
         completionsBefore)
@@ -177,6 +183,23 @@ public final class AppCoordinator {
 
   public func drainAppServerRequests() -> [AppServerRequest] {
     taskMonitor.drainRequests() + quotaMonitor.drainRequests()
+  }
+
+  /// Drains pending reset events from the view state. The caller (app
+  /// delegate) uses these to trigger notifications and border pulse.
+  public func drainViewResetEvents() -> [QuotaResetEvent] {
+    viewState.drainResetEvents()
+  }
+
+  /// Clears the temporary reset message if it has expired.
+  @discardableResult
+  public func clearExpiredResetMessage(now: Date) -> Bool {
+    viewState.clearExpiredResetMessage(now: now)
+  }
+
+  /// Applies a temporary reset message to the view state.
+  public func applyResetMessage(_ message: String, expiresAt: Date) {
+    viewState.setResetMessage(message, expiresAt: expiresAt)
   }
 
   private func presentTaskStatus(_ status: BeaconStatus) {

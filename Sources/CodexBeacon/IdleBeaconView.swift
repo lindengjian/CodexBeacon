@@ -63,6 +63,11 @@ struct IdleBeaconView: View {
       }
     }
     .onTapGesture(perform: onActivate)
+    .overlay(alignment: .center) {
+      if let message = state.activeResetMessage {
+        resetMessageOverlay(message)
+      }
+    }
   }
 
   private var isCompact: Bool {
@@ -89,6 +94,22 @@ struct IdleBeaconView: View {
     case .monitoringUnavailable:
       "Monitoring unavailable"
     }
+  }
+
+  private func resetMessageOverlay(_ message: String) -> some View {
+    Text(message)
+      .font(.system(size: isCompact ? 6 : 9, weight: .medium, design: .rounded))
+      .foregroundStyle(.white.opacity(0.9))
+      .multilineTextAlignment(.center)
+      .fixedSize(horizontal: true, vertical: false)
+      .padding(.horizontal, 4)
+      .padding(.vertical, 2)
+      .background(
+        RoundedRectangle(cornerRadius: 4, style: .circular)
+          .fill(BeaconColor.green.opacity(0.7))
+      )
+      .padding(.bottom, 2)
+      .transition(.opacity.animation(.easeInOut(duration: 0.3)))
   }
 }
 

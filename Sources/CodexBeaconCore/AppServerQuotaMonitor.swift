@@ -6,6 +6,13 @@ struct AppServerQuotaMonitor {
   private var state: QuotaMonitorState = .notStarted
   private var pendingSnapshotRequestID: Int?
   private var requests: [AppServerRequest] = []
+  private var resetEvents: [QuotaResetEvent] = []
+
+  /// Threshold below which a window is considered effectively reset (used % ≈ 0).
+  private static let resetThreshold: Double = 5
+  /// A window with used percentage at or above this value is considered
+  /// meaningfully consumed before a reset.
+  private static let meaningfulUsageThreshold: Double = 10
 
   init(requestIDGenerator: AppServerRequestIDGenerator) {
     self.requestIDGenerator = requestIDGenerator
@@ -36,6 +43,7 @@ struct AppServerQuotaMonitor {
     windows.removeAll()
     pendingSnapshotRequestID = nil
     requests.removeAll()
+    resetEvents.removeAll()
     requestSnapshot()
   }
 
@@ -44,6 +52,7 @@ struct AppServerQuotaMonitor {
     windows.removeAll()
     pendingSnapshotRequestID = nil
     requests.removeAll()
+    resetEvents.removeAll()
   }
 
   mutating func observationBecameStale() {
@@ -93,6 +102,11 @@ struct AppServerQuotaMonitor {
     return requests
   }
 
+  mutating func drainResetEvents() -> [QuotaResetEvent] {
+    defer { resetEvents.removeAll() }
+    return resetEvents
+  }
+
   private mutating func requestSnapshot() {
     let request = AppServerRequest(
       id: requestIDGenerator.next(), method: QuotaMethod.readRateLimits)
@@ -104,11 +118,13 @@ struct AppServerQuotaMonitor {
     guard let response = try? JSONDecoder().decode(RateLimitsResponse.self, from: data) else {
       return false
     }
+    let previous = windows
     windows.removeAll()
     for (key, entry) in response.result.rateLimits.windows {
-      windows[key] = window(from: entry, key: key, previous: nil)
+      windows[key] = window(from: entry, key: key, previous: previous[key])
     }
     state = .available
+    detectResets(previous: previous, observedAt: observedAt, kind: .confirmed)
     return true
   }
 
@@ -125,7 +141,61 @@ struct AppServerQuotaMonitor {
       windows[key] = window(from: entry, key: key, previous: previous[key])
     }
     state = .available
+    detectResets(previous: previous, observedAt: observedAt, kind: .inferred)
     return true
+  }
+
+  /// Detects quota resets by comparing previous window state to current.
+  ///
+  /// A reset is recognised when a window that previously had meaningful
+  /// usage (≥ `meaningfulUsageThreshold`) now has near-zero usage
+  /// (≤ `resetThreshold`).
+  ///
+  /// For inferred resets from other-client notifications, we additionally
+  /// require that the `resetAt` boundary has moved forward, providing
+  /// consistent dual evidence.
+  private mutating func detectResets(
+    previous: [String: QuotaWindow],
+    observedAt: Date,
+    kind: QuotaResetEvent.Kind
+  ) {
+    var resetKeys: [String] = []
+    for (key, current) in windows {
+      let prev = previous[key]
+      let wasMeaningful = (prev?.usedPercentage ?? 0) >= Self.meaningfulUsageThreshold
+      let isNearZero = current.usedPercentage <= Self.resetThreshold
+
+      guard wasMeaningful && isNearZero else {
+        continue
+      }
+
+      switch kind {
+      case .confirmed:
+        // Beacon's own snapshot confirmed the reset — no additional
+        // evidence required beyond the usage drop.
+        resetKeys.append(key)
+      case .inferred:
+        // For inferred resets (other-client notifications), require
+        // consistent dual evidence: usage dropped AND the reset
+        // boundary moved forward.
+        if let prevReset = prev?.resetAt,
+          let currentReset = current.resetAt,
+          currentReset > prevReset
+        {
+          resetKeys.append(key)
+        }
+      }
+    }
+
+    if !resetKeys.isEmpty {
+      resetEvents.append(
+        QuotaResetEvent(
+          kind: kind,
+          windowKeys: resetKeys.sorted(),
+          detectedAt: observedAt
+        )
+      )
+    }
   }
 
   private func window(

@@ -30,6 +30,31 @@ struct LocalDiagnosticStoreTests {
     )
   }
 
+  @Test("entries older than 5 minutes are pruned after each write")
+  func prunesEntriesOlderThanRetentionWindow() throws {
+    let directory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("CodexBeaconTests-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+
+    let store = LocalDiagnosticStore(directory: directory)
+    let now = Date(timeIntervalSince1970: 1_753_500_000)
+    store.beginRun(runID: "prune-test", startedAt: now)
+
+    // Write an entry 10 minutes ago — should be pruned after next write.
+    store.record("stale entry", at: now.addingTimeInterval(-600))
+    // Write an entry 3 minutes ago — should survive.
+    store.record("recent entry", at: now.addingTimeInterval(-180))
+    // Write a current entry — should survive and trigger pruning.
+    store.record("current entry", at: now)
+
+    let trace = try String(contentsOf: store.fileURL, encoding: .utf8)
+
+    #expect(!trace.contains("stale entry"), "entry older than 5 min should be pruned")
+    #expect(trace.contains("recent entry"), "entry within 5 min should survive")
+    #expect(trace.contains("current entry"), "current entry should survive")
+    #expect(trace.contains("run_id=prune-test"), "header should survive")
+  }
+
   @Test("a diagnostic log can be copied to a user-selected folder without replacing existing exports")
   func exportsDiagnosticLogToSelectedDirectory() throws {
     let root = FileManager.default.temporaryDirectory

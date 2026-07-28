@@ -31,6 +31,9 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
   private var integrationSettingsModel: BeaconIntegrationSettingsModel?
   private var hotKeyRegistrationError: String?
   private var hasStartedMonitoring = false
+  private lazy var resetNotificationManager = ResetNotificationManager(
+    diagnosticStore: diagnosticStore
+  )
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     coordinator.start()
@@ -93,7 +96,8 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
     diagnosticStore.record(
       "coordinator handling event=\(event.traceDescription) status_before=\(statusBefore.traceName)"
     )
-    coordinator.handle(.time(.advanced(to: Date())))
+    let now = Date()
+    coordinator.handle(.time(.advanced(to: now)))
     coordinator.handle(.task(event))
     let state = coordinator.viewState
     let hoverDetail = state.hoverDetail
@@ -101,6 +105,36 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
       "coordinator state_resolved status_after=\(state.status.traceName) working=\(hoverDetail?.workingCount ?? 0) waiting=\(hoverDetail?.waitingCount ?? 0) completed=\(hoverDetail?.completedCount ?? 0) visible=\(state.isVisible)"
     )
     taskMonitor?.updateQuotaRefreshInterval(for: coordinator.viewState.status)
+
+    // Process reset events without touching task-status lights.
+    let resetEvents = coordinator.drainViewResetEvents()
+    if !resetEvents.isEmpty {
+      diagnosticStore.record(
+        "reset_notification events_drained count=\(resetEvents.count) kinds=\(resetEvents.map { $0.kind == .confirmed ? "confirmed" : "inferred" }.joined(separator: ","))"
+      )
+      for event in resetEvents {
+        resetNotificationManager.enqueue(event)
+      }
+
+      // Sync reset banner state into the view state so IdleBeaconView
+      // renders the overlay. Applied only when new reset events arrive,
+      // not on every task event — otherwise the expiry clock never runs.
+      if let message = resetNotificationManager.activeMessage {
+        coordinator.applyResetMessage(
+          message,
+          expiresAt: now.addingTimeInterval(ResetNotificationManager.messageDuration)
+        )
+      }
+
+      // Trigger border pulse when the manager signals a new pulse.
+      if resetNotificationManager.isBorderPulseActive {
+        panel?.startBorderPulse()
+      }
+    }
+
+    // Clear expired reset message on state.
+    coordinator.clearExpiredResetMessage(now: now)
+
     updatePanelContent()
   }
 

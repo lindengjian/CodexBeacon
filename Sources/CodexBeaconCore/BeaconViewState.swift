@@ -216,6 +216,15 @@ public struct BeaconViewState: Equatable, Sendable {
   public var hoverDetail: HoverDetailState?
   public var showTaskTitles: Bool
 
+  /// Reset events accumulated since the last drain. The app delegate drains
+  /// these to trigger notifications and border pulse without altering the
+  /// three task-status lights.
+  public var pendingResetEvents: [QuotaResetEvent]
+  /// Temporary message shown on the Beacon surface after a confirmed reset
+  /// (e.g. "额度已重置 · 100%").
+  public var activeResetMessage: String?
+  public var activeResetMessageExpiresAt: Date?
+
   public var dimensions: BeaconDimensions {
     size.dimensions(for: orientation)
   }
@@ -233,7 +242,10 @@ public struct BeaconViewState: Equatable, Sendable {
     waitingTasks: [WaitingTask] = [],
     unconfirmedCompletionTaskIDs: Set<String> = [],
     hoverDetail: HoverDetailState? = nil,
-    showTaskTitles: Bool = false
+    showTaskTitles: Bool = false,
+    pendingResetEvents: [QuotaResetEvent] = [],
+    activeResetMessage: String? = nil,
+    activeResetMessageExpiresAt: Date? = nil
   ) {
     self.isVisible = isVisible
     self.size = size
@@ -248,6 +260,9 @@ public struct BeaconViewState: Equatable, Sendable {
     self.unconfirmedCompletionTaskIDs = unconfirmedCompletionTaskIDs
     self.hoverDetail = hoverDetail
     self.showTaskTitles = showTaskTitles
+    self.pendingResetEvents = pendingResetEvents
+    self.activeResetMessage = activeResetMessage
+    self.activeResetMessageExpiresAt = activeResetMessageExpiresAt
   }
 
   public static let idle = BeaconViewState(
@@ -261,6 +276,31 @@ public struct BeaconViewState: Equatable, Sendable {
     ],
     quotaTrack: .init(style: .neutral)
   )
+
+  /// Drains and returns accumulated reset events, clearing the pending list.
+  public mutating func drainResetEvents() -> [QuotaResetEvent] {
+    defer { pendingResetEvents.removeAll() }
+    return pendingResetEvents
+  }
+
+  /// Sets the temporary reset message that appears on the Beacon surface.
+  /// The message is automatically cleared after `duration` seconds by the
+  /// app delegate during the next time-advance tick.
+  public mutating func setResetMessage(_ message: String, expiresAt: Date) {
+    activeResetMessage = message
+    activeResetMessageExpiresAt = expiresAt
+  }
+
+  /// Clears the temporary reset message if it has expired. Returns `true`
+  /// when the message was cleared (so callers can update the panel).
+  public mutating func clearExpiredResetMessage(now: Date) -> Bool {
+    guard let expiresAt = activeResetMessageExpiresAt, now >= expiresAt else {
+      return false
+    }
+    activeResetMessage = nil
+    activeResetMessageExpiresAt = nil
+    return true
+  }
 
   mutating func present(
     _ status: BeaconStatus,
