@@ -160,6 +160,27 @@ struct BeaconSettingsScenarioTests {
     #expect(settings.soundPreferences[.quotaReset] == .init(isEnabled: true, soundName: "Ping"))
     #expect(saved.count == 3)
   }
+
+  @Test("settings preview plays the selected sound without persisting preferences")
+  func settingsPreviewPlaysSelectedSoundWithoutPersistingPreferences() {
+    var saved: [BeaconSoundPreferences] = []
+    var previewedSounds: [String] = []
+    let settings = BeaconSettingsModel(
+      size: .standard,
+      hotKey: .init(keyCode: 8, modifiers: 6_400),
+      registrationError: nil,
+      onSizeSelected: { _ in },
+      onHotKeySelected: { _ in nil },
+      onSoundPreferencesChanged: { saved.append($0) },
+      onSoundPreviewRequested: { previewedSounds.append($0) }
+    )
+
+    settings.updateSoundName("Basso", for: .waiting)
+    settings.previewSound(for: .waiting)
+
+    #expect(previewedSounds == ["Basso"])
+    #expect(saved.count == 1)
+  }
 }
 
 private extension Array {

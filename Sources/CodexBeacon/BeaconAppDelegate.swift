@@ -413,6 +413,9 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
       onSoundPreferencesChanged: { [weak self] soundPreferences in
         self?.updateSoundPreferences(soundPreferences)
       },
+      onSoundPreviewRequested: { soundName in
+        BeaconSystemSound.play(named: soundName)
+      },
       integrationSettings: integrationSettings
     )
     let controller = BeaconSettingsWindowController(rootView: rootView)
