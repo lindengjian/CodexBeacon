@@ -58,6 +58,11 @@ Use a supported installed Codex Desktop version and a non-sensitive test task.
 Do not run the adapter against an unsupported CLI version. Beacon must remain
 in **监测不可用** rather than attempting an unversioned integration.
 
+Owner verification on 2026-07-28: passed. The supported shared-daemon Desktop
+session observed loaded-task status without replying to server requests; the
+rollback restored Desktop's default private App Server topology without
+changing the verified task or sign-in state.
+
 ## macOS window matrix
 
 Record the macOS version, display arrangement, notch presence, Dock setting,
@@ -73,6 +78,8 @@ and pass/fail result for every row on the owner machine.
 | Auto-hidden Dock | Beacon can occupy the Dock edge without a permanent Dock-sized gap. |
 | Notifications and approval panels | Quota notifications and Codex approval panels remain usable; Beacon neither receives nor answers Desktop's server requests. |
 | Reduce Motion | No animation runs; waiting remains a green double ring and completed remains solid green. |
+
+Owner verification on 2026-07-28: passed for every matrix row.
 
 ## System security boundary
 
