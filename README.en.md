@@ -83,7 +83,7 @@ When tasks differ, this order determines the displayed signal. With macOS **Redu
 
 ## Local integration
 
-Beacon passively observes the local Codex App Server and never resumes or changes a task, answers approval/input requests, or reads private transcripts. If Settings reports **Monitoring unavailable**, run the diagnostic and select **Repair integration** only when it is offered; then fully quit and reopen Codex Desktop before running the diagnostic again.
+Beacon passively observes the local Codex App Server and never resumes or changes a task, answers approval/input requests, or reads private transcripts. Beacon automatically prepares or restores its saved local integration at startup. After a computer restart, a red light means Beacon is waiting for Codex Desktop to start and it connects automatically. If Settings still reports **Monitoring unavailable**, run the diagnostic and use **Repair integration**; it never closes or restarts Codex Desktop.
 
 You can restore the default Desktop integration from Settings at any time.
 

@@ -4,10 +4,9 @@ import Darwin
 import Foundation
 import os
 
-/// Connects only to the daemon already selected by Codex Desktop. It never
-/// launches an independent App Server, resumes a thread, or replies to server
-/// requests. Desktop adoption is deliberately an explicit repair action
-/// outside this passive observer.
+/// Connects only to Beacon's version-gated shared daemon. It never resumes a
+/// thread or replies to server requests. At login it restores the persisted
+/// Desktop opt-in before waiting for Codex Desktop to connect.
 final class DesktopAppServerMonitor: @unchecked Sendable {
   private static let snapshotInterval: TimeInterval = 5
   typealias EventHandler = (TaskEvent) -> Void
@@ -36,6 +35,7 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
   private var consecutiveQuotaRefreshFailures = 0
   private var canRefreshQuota = false
   private var connectionAttemptInFlight = false
+  private var compatibilityRepairInFlight = false
   private var connectionGeneration = 0
   private var isStopped = false
 
@@ -59,7 +59,23 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
     diagnosticStore.beginRun()
     diagnosticStore.record("lifecycle monitor_start")
     isStopped = false
-    attemptConnection()
+    guard let bundledCLIURL else {
+      attemptConnection()
+      return
+    }
+    DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+      guard let self else { return }
+      if let cliVersion = Self.cliVersion(at: bundledCLIURL) {
+        _ = self.compatibilityAdapter.activateForCurrentLogin(
+          bundledCLIURL: bundledCLIURL,
+          cliVersion: cliVersion
+        )
+      }
+      DispatchQueue.main.async {
+        guard !self.isStopped else { return }
+        self.attemptConnection()
+      }
+    }
   }
 
   func stop() {
@@ -98,15 +114,29 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
     }
   }
 
-  /// The repair path is deliberately user-initiated. It only creates Beacon's
+  /// Manual recovery serializes repair requests. It only creates Beacon's
   /// labelled LaunchAgent and the next-process opt-in; it never stops Desktop.
   func repair(
     completion: @escaping @MainActor @Sendable (DesktopIntegrationDiagnostic) -> Void
   ) {
+    guard !compatibilityRepairInFlight else {
+      DispatchQueue.main.async {
+        completion(
+          .init(
+            health: .restartRequired,
+            summary: "共享 App Server 正在准备",
+            instructions: "请等待当前修复完成；无需重复点击。"
+          )
+        )
+      }
+      return
+    }
+    compatibilityRepairInFlight = true
     DispatchQueue.global(qos: .userInitiated).async { [bundledCLIURL, socketPath] in
       let adapter = DesktopDaemonCompatibilityAdapter()
       guard let bundledCLIURL else {
-        DispatchQueue.main.async {
+        DispatchQueue.main.async { [weak self] in
+          self?.compatibilityRepairInFlight = false
           completion(
             .init(
               health: .unavailable,
@@ -118,7 +148,8 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
         return
       }
       guard let cliVersion = Self.cliVersion(at: bundledCLIURL) else {
-        DispatchQueue.main.async {
+        DispatchQueue.main.async { [weak self] in
+          self?.compatibilityRepairInFlight = false
           completion(
             .init(
               health: .unavailable,
@@ -130,7 +161,8 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
         return
       }
       guard DesktopDaemonCompatibilityAdapter.supports(cliVersion: cliVersion) else {
-        DispatchQueue.main.async {
+        DispatchQueue.main.async { [weak self] in
+          self?.compatibilityRepairInFlight = false
           completion(
             .init(
               health: .unavailable,
@@ -158,7 +190,10 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
         )
       }
       _ = socketPath // Keep the repair signature aligned with passive diagnosis.
-      DispatchQueue.main.async { completion(diagnostic) }
+      DispatchQueue.main.async { [weak self] in
+        self?.compatibilityRepairInFlight = false
+        completion(diagnostic)
+      }
     }
   }
 

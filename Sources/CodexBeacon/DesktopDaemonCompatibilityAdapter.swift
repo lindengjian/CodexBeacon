@@ -5,27 +5,63 @@ import Foundation
 /// daemon flag is undocumented, so this adapter is intentionally version-gated
 /// and preserves any pre-existing launchd value for a lossless rollback.
 final class DesktopDaemonCompatibilityAdapter {
+  typealias LaunchctlRunner = (_ arguments: [String], _ allowFailure: Bool) throws -> String
+
   private static let label = "com.codexbeacon.shared-app-server"
   private static let environmentKey = "CODEX_APP_SERVER_USE_LOCAL_DAEMON"
   private static let supportedCLIVersions = ["0.146.0-alpha.3.1"]
+  private static let operationLock = NSLock()
 
   private let fileManager: FileManager
   private let diagnosticStore: LocalDiagnosticStore
   private let launchAgentURL: URL
   private let stateURL: URL
+  private let runLaunchctlCommand: LaunchctlRunner
 
-  init(fileManager: FileManager = .default, diagnosticStore: LocalDiagnosticStore = .init()) {
+  init(
+    fileManager: FileManager = .default,
+    diagnosticStore: LocalDiagnosticStore = .init(),
+    launchAgentURL: URL? = nil,
+    stateURL: URL? = nil,
+    runLaunchctl: @escaping LaunchctlRunner = { arguments, allowFailure in
+      try DesktopDaemonCompatibilityAdapter.systemRunLaunchctl(
+        arguments,
+        allowFailure: allowFailure
+      )
+    }
+  ) {
     self.fileManager = fileManager
     self.diagnosticStore = diagnosticStore
-    launchAgentURL = fileManager.homeDirectoryForCurrentUser
+    self.launchAgentURL = launchAgentURL ?? fileManager.homeDirectoryForCurrentUser
       .appendingPathComponent("Library/LaunchAgents")
       .appendingPathComponent("\(Self.label).plist")
-    stateURL = diagnosticStore.directory.appendingPathComponent("shared-daemon-adoption.json")
+    self.stateURL = stateURL
+      ?? diagnosticStore.directory.appendingPathComponent("shared-daemon-adoption.json")
+    runLaunchctlCommand = runLaunchctl
   }
 
   /// Installs a user-scoped, labelled daemon and opt-in for the *next* Desktop
   /// process. It never terminates Desktop, because that could discard user work.
   func prepare(bundledCLIURL: URL, cliVersion: String) -> String? {
+    Self.operationLock.lock()
+    defer { Self.operationLock.unlock() }
+    return prepareLocked(bundledCLIURL: bundledCLIURL, cliVersion: cliVersion)
+  }
+
+  /// Applies the user's saved integration choice when Beacon starts after a
+  /// computer restart. A fresh install is adopted automatically; an existing
+  /// adoption only restores this login's opt-in and never restarts Desktop.
+  func activateForCurrentLogin(bundledCLIURL: URL, cliVersion: String) -> String? {
+    Self.operationLock.lock()
+    defer { Self.operationLock.unlock() }
+
+    if isPrepared {
+      return restoreCurrentLoginOptInLocked(bundledCLIURL: bundledCLIURL)
+    }
+    return prepareLocked(bundledCLIURL: bundledCLIURL, cliVersion: cliVersion)
+  }
+
+  private func prepareLocked(bundledCLIURL: URL, cliVersion: String) -> String? {
     guard Self.supportedCLIVersions.contains(cliVersion) else {
       return "Unsupported Codex Desktop CLI \(cliVersion). Shared-daemon adoption was not attempted."
     }
@@ -47,7 +83,7 @@ final class DesktopDaemonCompatibilityAdapter {
       diagnosticStore.record("Shared-daemon compatibility adapter prepared. Fully quit and reopen Codex Desktop, then reopen Codex Beacon to validate shared runtime state.")
       return nil
     } catch {
-      rollback()
+      rollbackLocked()
       let message = "Shared-daemon adoption failed: \(error.localizedDescription)"
       diagnosticStore.record(message)
       return message
@@ -57,6 +93,40 @@ final class DesktopDaemonCompatibilityAdapter {
   /// Restores the exact launchd environment value that existed before Beacon
   /// installed its adapter, and removes only Beacon's labelled LaunchAgent.
   func rollback() {
+    Self.operationLock.lock()
+    defer { Self.operationLock.unlock() }
+    rollbackLocked()
+  }
+
+  /// Reinstates the opt-in that launchd clears after a computer restart. This
+  /// preserves the user's earlier explicit adoption while leaving a running
+  /// Codex Desktop process untouched.
+  func restoreCurrentLoginOptIn(bundledCLIURL: URL) -> String? {
+    Self.operationLock.lock()
+    defer { Self.operationLock.unlock() }
+    return restoreCurrentLoginOptInLocked(bundledCLIURL: bundledCLIURL)
+  }
+
+  private func restoreCurrentLoginOptInLocked(bundledCLIURL: URL) -> String? {
+    guard isPrepared else {
+      return nil
+    }
+
+    do {
+      // Update the persisted LaunchAgent too: on the next login it sets the
+      // opt-in before it execs the shared daemon.
+      try writeLaunchAgent(for: bundledCLIURL)
+      try runLaunchctl(["setenv", Self.environmentKey, "1"])
+      diagnosticStore.record("Shared-daemon opt-in restored for the current login session.")
+      return nil
+    } catch {
+      let message = "Shared-daemon opt-in could not be restored for this login: \(error.localizedDescription)"
+      diagnosticStore.record(message)
+      return message
+    }
+  }
+
+  private func rollbackLocked() {
     guard let state = try? loadState() else {
       diagnosticStore.record("Shared-daemon rollback was not attempted because Beacon ownership state is missing or unreadable.")
       return
@@ -94,9 +164,11 @@ final class DesktopDaemonCompatibilityAdapter {
 
   private func writeLaunchAgent(for bundledCLIURL: URL) throws {
     let programArguments = [
+      "/bin/sh",
+      "-c",
+      "/bin/launchctl setenv \(Self.environmentKey) 1; exec \"$1\" -c \"features.code_mode_host=true\" app-server --listen unix://",
+      "codexbeacon-sh",
       bundledCLIURL.path,
-      "-c", "features.code_mode_host=true",
-      "app-server", "--listen", "unix://",
     ]
     let plist: [String: Any] = [
       "Label": Self.label,
@@ -132,6 +204,14 @@ final class DesktopDaemonCompatibilityAdapter {
 
   @discardableResult
   private func runLaunchctl(_ arguments: [String], allowFailure: Bool = false) throws -> String {
+    try runLaunchctlCommand(arguments, allowFailure)
+  }
+
+  @discardableResult
+  private static func systemRunLaunchctl(
+    _ arguments: [String],
+    allowFailure: Bool = false
+  ) throws -> String {
     let process = Process()
     let output = Pipe()
     process.executableURL = URL(fileURLWithPath: "/bin/launchctl")

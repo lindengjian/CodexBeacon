@@ -28,7 +28,7 @@ Release 页面提供 Apple Silicon DMG 和对应的 SHA-256 校验值。
 2. 将 **Codex Beacon** 拖入 **Applications** 文件夹。
 3. 在 Applications 中打开 Codex Beacon；如 macOS 要求确认打开，请按系统提示操作。
 
-首次启动时，Beacon 会检查本机 Codex Desktop 集成、请求通知权限，并提供“登录时启动”。随后它以 accessory 应用方式运行，不显示 Dock 图标或菜单栏项目。
+首次启动时，Beacon 会自动准备本机 Codex Desktop 集成、请求通知权限，并提供“登录时启动”。此后电脑重启并登录时，Beacon 会自动恢复集成、以红灯等待 Codex Desktop 启动，再自动接入；无需重复修复。随后它以 accessory 应用方式运行，不显示 Dock 图标或菜单栏项目。
 
 ### 一行命令安装
 
@@ -83,7 +83,7 @@ curl -fsSL https://raw.githubusercontent.com/lindengjian/CodexBeacon/main/script
 
 ## 本地集成
 
-Beacon 是本地 Codex App Server 的被动观察者：不会恢复或修改任务、回复审批/输入请求，也不会读取私有转录记录。若设置中显示“监测不可用”，请运行诊断；仅在提供该选项时选择“修复集成”，随后完全退出并重新打开 Codex Desktop，再次运行诊断。
+Beacon 是本地 Codex App Server 的被动观察者：不会恢复或修改任务、回复审批/输入请求，也不会读取私有转录记录。Beacon 会在启动时自动准备或恢复已保存的本地集成；电脑重启后，红灯只表示它正在等待 Codex Desktop 启动。若诊断仍显示“监测不可用”，可在设置中手动“修复集成”；此操作不会关闭或重启 Codex Desktop。
 
 你可以随时在设置中恢复默认 Desktop 集成。
 
