@@ -40,9 +40,9 @@ jobs:
         run: |
           gh release create "$GITHUB_REF_NAME" \
             dist/CodexBeacon-*-arm64.dmg \
-            npm/lindengjian-codex-beacon-*.tgz \
+            lindengjian-codex-beacon-*.tgz \
             --generate-notes
 
       - name: Publish npm package
         if: env.NODE_AUTH_TOKEN != '' && github.event_name == 'push'
-        run: npm publish --prefix npm --provenance
+        run: npm publish ./npm --provenance
