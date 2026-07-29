@@ -113,4 +113,4 @@ npm run pack:check --prefix npm
 
 ## 了解更多
 
-详细的兼容性检查与 macOS 窗口矩阵见[验收记录](docs/acceptance/first-local-milestone.md)；产品细节和范围见 [docs/PRODUCT.md](docs/PRODUCT.md)。
+详细的兼容性检查与 macOS 窗口矩阵见[验收记录](docs/acceptance/first-local-milestone.md)；产品细节和范围见 [docs/PRODUCT.md](docs/PRODUCT.md)。源码与全部正式发布均位于 [lindengjian/CodexBeacon](https://github.com/lindengjian/CodexBeacon)。

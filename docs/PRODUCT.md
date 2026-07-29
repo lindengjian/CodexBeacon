@@ -186,7 +186,7 @@ Codex Beacon communicates with the local Codex App Server and has no telemetry, 
 ## Platform And Distribution
 
 - User-facing name: Codex Beacon.
-- Repository name may remain CodexStateTool.
+- Repository: [`lindengjian/CodexBeacon`](https://github.com/lindengjian/CodexBeacon).
 - Native SwiftUI and AppKit app.
 - Minimum macOS: 15.
 - Initial architecture: Apple Silicon only.

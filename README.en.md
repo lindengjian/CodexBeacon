@@ -113,4 +113,4 @@ npm run pack:check --prefix npm
 
 ## Learn more
 
-See [the acceptance record](docs/acceptance/first-local-milestone.md) for compatibility checks and the macOS window matrix, and [docs/PRODUCT.md](docs/PRODUCT.md) for product details and scope.
+See [the acceptance record](docs/acceptance/first-local-milestone.md) for compatibility checks and the macOS window matrix, and [docs/PRODUCT.md](docs/PRODUCT.md) for product details and scope. Source code and all official releases are available at [lindengjian/CodexBeacon](https://github.com/lindengjian/CodexBeacon).
