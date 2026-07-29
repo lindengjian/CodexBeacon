@@ -1,6 +1,6 @@
 {
   "name": "@lindengjian/codex-beacon",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "description": "Install Codex Beacon, a native macOS status companion for Codex Desktop.",
   "license": "UNLICENSED",
   "private": false,

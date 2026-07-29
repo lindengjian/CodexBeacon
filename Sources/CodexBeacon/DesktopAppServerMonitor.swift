@@ -832,7 +832,7 @@ private final class UnixWebSocketClient: @unchecked Sendable {
       guard response.hasPrefix("HTTP/1.1 101") else { reportFailure("The App Server rejected the WebSocket upgrade."); return }
       isUpgraded = true
       send(["id": 1, "method": "initialize", "params": [
-        "clientInfo": ["name": "codex-beacon", "title": "Codex Beacon passive observer", "version": "0.1.0"],
+        "clientInfo": ["name": "codex-beacon", "title": "Codex Beacon passive observer", "version": "1.0.8"],
         "capabilities": ["experimentalApi": true],
       ]])
     }
