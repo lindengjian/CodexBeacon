@@ -30,21 +30,15 @@ The release page includes the Apple Silicon DMG and its SHA-256 checksum.
 
 On first launch, Beacon checks the local Codex Desktop integration, requests notification permission, and offers **Launch at Login**. It then runs as an accessory application without a Dock icon or menu-bar item.
 
-### npm (for developers)
+### One-line install
 
-If Node.js 20 or later is installed, you can also use this command after the npm package is published:
-
-```sh
-npx @lindengjian/codex-beacon install
-```
-
-It verifies the bundle signature, installs the app at `~/Applications/CodexBeacon.app`, and opens it. It does not bypass macOS security confirmation. For global installation and subsequent management:
+No Node.js is required. Open Terminal, paste this line, and press Return:
 
 ```sh
-npm install -g @lindengjian/codex-beacon
-codex-beacon doctor
-codex-beacon uninstall
+curl -fsSL https://raw.githubusercontent.com/lindengjian/CodexBeacon/main/scripts/install.sh | bash
 ```
+
+The command downloads the latest version from the official GitHub Release, checks the downloaded package and verifies the app signature, installs it at `~/Applications/CodexBeacon.app`, and opens it. It does not bypass macOS security confirmation; follow the system prompt if macOS asks you to confirm opening the app.
 
 ## What it shows
 

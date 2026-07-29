@@ -30,21 +30,15 @@ Release 页面提供 Apple Silicon DMG 和对应的 SHA-256 校验值。
 
 首次启动时，Beacon 会检查本机 Codex Desktop 集成、请求通知权限，并提供“登录时启动”。随后它以 accessory 应用方式运行，不显示 Dock 图标或菜单栏项目。
 
-### npm（面向开发者）
+### 一行命令安装
 
-如果你已安装 Node.js 20 或更新版本，也可在 npm 发布后使用：
-
-```sh
-npx @lindengjian/codex-beacon install
-```
-
-该命令会先验证包签名，再将 App 安装到 `~/Applications/CodexBeacon.app` 并启动它；不会绕过 macOS 的安全确认。全局安装及后续管理也可使用：
+不需要安装 Node.js。打开“终端”，粘贴下面这一行并按回车：
 
 ```sh
-npm install -g @lindengjian/codex-beacon
-codex-beacon doctor
-codex-beacon uninstall
+curl -fsSL https://raw.githubusercontent.com/lindengjian/CodexBeacon/main/scripts/install.sh | bash
 ```
+
+命令会从官方 GitHub Release 下载最新版、校验下载包并验证 App 签名，安装到 `~/Applications/CodexBeacon.app` 并启动。它不会绕过 macOS 的安全确认；如系统要求确认打开，请按系统提示操作。
 
 ## 它展示什么
 
