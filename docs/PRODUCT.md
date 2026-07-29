@@ -2,9 +2,9 @@
 
 ## Purpose
 
-Codex Beacon is an extremely small macOS companion for the Codex desktop app. It stays above other windows and makes Codex task state and the current account quota visible at a glance.
+Codex Beacon is an extremely small native desktop companion for the Codex desktop app. It stays above other windows and makes Codex task state and the current account quota visible at a glance.
 
-The first milestone is for the owner's own Apple Silicon Mac. It monitors only Codex desktop app tasks.
+The first milestone is for the owner's own Apple Silicon Mac. It monitors only Codex desktop app tasks. A later Windows 11 x64 public preview targets core feature parity through a separate native client; platform-specific window behavior is validated independently.
 
 ## Status Model
 
@@ -187,15 +187,16 @@ Codex Beacon communicates with the local Codex App Server and has no telemetry, 
 
 - User-facing name: Codex Beacon.
 - Repository name may remain CodexStateTool.
-- Native SwiftUI and AppKit app.
-- Minimum macOS: 15.
-- Initial architecture: Apple Silicon only.
-- First milestone: unsigned local build for the owner's Mac.
-- Future public release: signed and notarized standalone DMG outside the Mac App Store.
+- macOS edition: native SwiftUI and AppKit, macOS 15+, Apple Silicon.
+- Windows public-preview edition: native C# / .NET 10 LTS + WPF, Windows 11 x64.
+- Shared requirement: core feature parity preserves the same status, quota, completion-confirmation, privacy, and fail-closed semantics; it does not require shared UI code or identical platform-window APIs.
+- Initial macOS milestone: unsigned local build for the owner's Mac.
+- macOS public distribution: standalone DMG outside the Mac App Store.
+- Windows public-preview distribution: GitHub Release Inno Setup x64 `Setup.exe`, installed per user under `%LocalAppData%\\Programs\\Codex Beacon`, with no automatic update check. Until code signing is introduced, documentation must explain the expected SmartScreen prompt.
 
-## Out Of Scope For The First Release
+## Out Of Scope
 
-- Windows and Linux.
+- Linux.
 - Codex CLI, IDE extension, and remote tasks.
 - Multiple-account aggregation.
 - Task history and task lists.
