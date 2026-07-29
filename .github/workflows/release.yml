@@ -33,7 +33,7 @@ jobs:
       - name: Assemble distribution artifacts
         run: |
           ./scripts/build-dmg.sh
-          npm pack --prefix npm
+          npm pack ./npm
 
       - name: Create GitHub Release
         if: github.event_name == 'push'
