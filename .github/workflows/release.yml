@@ -1,0 +1,48 @@
+name: Release Codex Beacon
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  release:
+    runs-on: macos-15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - name: Test native app
+        run: swift test
+
+      - name: Test npm installer
+        run: npm test --prefix npm
+
+      - name: Assemble distribution artifacts
+        run: |
+          ./scripts/build-dmg.sh
+          npm pack --prefix npm
+
+      - name: Create GitHub Release
+        if: github.event_name == 'push'
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            dist/CodexBeacon-*-arm64.dmg \
+            npm/lindengjian-codex-beacon-*.tgz \
+            --generate-notes
+
+      - name: Publish npm package
+        if: env.NODE_AUTH_TOKEN != '' && github.event_name == 'push'
+        run: npm publish --prefix npm --provenance

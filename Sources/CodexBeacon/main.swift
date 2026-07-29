@@ -1,9 +1,16 @@
 import AppKit
 import CodexBeaconCore
 
-if CommandLine.arguments.contains("--rollback-shared-daemon") {
+switch BeaconCommandLine.command(arguments: CommandLine.arguments) {
+case .rollbackSharedDaemon:
   DesktopDaemonCompatibilityAdapter().rollback()
   exit(EXIT_SUCCESS)
+case .prepareForUninstall:
+  BeaconSystemIntegration.unregisterLaunchAtLoginForUninstall()
+  DesktopDaemonCompatibilityAdapter().rollback()
+  exit(EXIT_SUCCESS)
+case .launch:
+  break
 }
 
 let application = NSApplication.shared

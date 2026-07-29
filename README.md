@@ -12,7 +12,7 @@ Codex Beacon 是一个原生 macOS 工具，用类红绿灯展示 Codex Desktop 
 
 ## 下载
 
-[下载 Codex Beacon 1.0.0](https://github.com/lindengjian/CodexStateTool/releases/tag/v1.0.0)
+[下载 Codex Beacon 1.0.1](https://github.com/lindengjian/CodexBeacon/releases/tag/v1.0.1)
 
 Release 页面提供 Apple Silicon DMG 和对应的 SHA-256 校验值。
 
@@ -24,11 +24,27 @@ Release 页面提供 Apple Silicon DMG 和对应的 SHA-256 校验值。
 
 ### 安装
 
-1. 下载并打开 `CodexBeacon-1.0.0-arm64.dmg`。
+1. 下载并打开 `CodexBeacon-1.0.1-arm64.dmg`。
 2. 将 **Codex Beacon** 拖入 **Applications** 文件夹。
 3. 在 Applications 中打开 Codex Beacon；如 macOS 要求确认打开，请按系统提示操作。
 
 首次启动时，Beacon 会检查本机 Codex Desktop 集成、请求通知权限，并提供“登录时启动”。随后它以 accessory 应用方式运行，不显示 Dock 图标或菜单栏项目。
+
+### npm（面向开发者）
+
+如果你已安装 Node.js 20 或更新版本，也可在 npm 发布后使用：
+
+```sh
+npx @lindengjian/codex-beacon install
+```
+
+该命令会先验证包签名，再将 App 安装到 `~/Applications/CodexBeacon.app` 并启动它；不会绕过 macOS 的安全确认。全局安装及后续管理也可使用：
+
+```sh
+npm install -g @lindengjian/codex-beacon
+codex-beacon doctor
+codex-beacon uninstall
+```
 
 ## 它展示什么
 
@@ -93,6 +109,12 @@ swift test
 
 # 组装 release 应用包，产物位于 .build/CodexBeacon.app
 ./scripts/build-app.sh
+
+# 运行 npm 安装器测试
+npm test --prefix npm
+
+# 构建并检查即将发布的 npm 包
+npm run pack:check --prefix npm
 ```
 
 ## 了解更多

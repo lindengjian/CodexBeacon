@@ -359,6 +359,13 @@ enum BeaconSystemIntegration {
     }
   }
 
+  /// Best-effort cleanup used only by the npm installer before it removes this
+  /// app bundle. A previously removed bundle is eventually cleaned up by macOS,
+  /// but unregistering first avoids leaving a stale login item behind.
+  static func unregisterLaunchAtLoginForUninstall() {
+    try? SMAppService.mainApp.unregister()
+  }
+
   private static func notificationStatusDescription(_ status: UNAuthorizationStatus) -> String {
     switch status {
     case .notDetermined: "尚未请求"

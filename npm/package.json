@@ -1,0 +1,43 @@
+{
+  "name": "@lindengjian/codex-beacon",
+  "version": "1.0.1",
+  "description": "Install Codex Beacon, a native macOS status companion for Codex Desktop.",
+  "license": "UNLICENSED",
+  "private": false,
+  "type": "module",
+  "bin": {
+    "codex-beacon": "bin/codex-beacon.mjs"
+  },
+  "files": [
+    "app",
+    "bin",
+    "lib",
+    "README.md"
+  ],
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "prepack": "node scripts/prepare-package.mjs",
+    "pack:check": "npm pack --dry-run"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lindengjian/CodexBeacon.git",
+    "directory": "npm"
+  },
+  "homepage": "https://github.com/lindengjian/CodexBeacon#readme",
+  "bugs": {
+    "url": "https://github.com/lindengjian/CodexBeacon/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

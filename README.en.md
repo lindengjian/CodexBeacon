@@ -12,7 +12,7 @@ It fails closed: when current, reliable Desktop runtime evidence is unavailable,
 
 ## Download
 
-[Download Codex Beacon 1.0.0](https://github.com/lindengjian/CodexStateTool/releases/tag/v1.0.0)
+[Download Codex Beacon 1.0.1](https://github.com/lindengjian/CodexBeacon/releases/tag/v1.0.1)
 
 The release page includes the Apple Silicon DMG and its SHA-256 checksum.
 
@@ -24,11 +24,27 @@ The release page includes the Apple Silicon DMG and its SHA-256 checksum.
 
 ### Install
 
-1. Download and open `CodexBeacon-1.0.0-arm64.dmg`.
+1. Download and open `CodexBeacon-1.0.1-arm64.dmg`.
 2. Drag **Codex Beacon** to **Applications**.
 3. Open Codex Beacon from Applications. If macOS asks you to confirm opening it, follow the system prompt.
 
 On first launch, Beacon checks the local Codex Desktop integration, requests notification permission, and offers **Launch at Login**. It then runs as an accessory application without a Dock icon or menu-bar item.
+
+### npm (for developers)
+
+If Node.js 20 or later is installed, you can also use this command after the npm package is published:
+
+```sh
+npx @lindengjian/codex-beacon install
+```
+
+It verifies the bundle signature, installs the app at `~/Applications/CodexBeacon.app`, and opens it. It does not bypass macOS security confirmation. For global installation and subsequent management:
+
+```sh
+npm install -g @lindengjian/codex-beacon
+codex-beacon doctor
+codex-beacon uninstall
+```
 
 ## What it shows
 
@@ -93,6 +109,12 @@ swift test
 
 # Assemble a release application bundle at .build/CodexBeacon.app
 ./scripts/build-app.sh
+
+# Run npm installer tests
+npm test --prefix npm
+
+# Build and inspect the npm package that would be published
+npm run pack:check --prefix npm
 ```
 
 ## Learn more
