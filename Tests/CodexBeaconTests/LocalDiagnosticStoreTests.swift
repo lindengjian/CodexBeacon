@@ -128,4 +128,22 @@ struct LocalDiagnosticStoreTests {
     #expect(try String(contentsOf: firstExport, encoding: .utf8).contains("run_id=export-test"))
     #expect(try String(contentsOf: secondExport, encoding: .utf8).contains("status_after=working"))
   }
+
+  @Test("diagnostic file stays within its configured byte budget")
+  func boundsDiagnosticFileSize() throws {
+    let directory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("CodexBeaconTests-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+
+    let store = LocalDiagnosticStore(directory: directory, maximumFileBytes: 1_024)
+    store.beginRun(runID: "size-bound-test")
+    for index in 0..<100 {
+      store.record("entry=\(index) " + String(repeating: "x", count: 80))
+    }
+    store.flush()
+
+    let size = try FileManager.default.attributesOfItem(atPath: store.fileURL.path)[.size] as? Int
+    #expect(size != nil)
+    #expect(size! <= 1_024)
+  }
 }

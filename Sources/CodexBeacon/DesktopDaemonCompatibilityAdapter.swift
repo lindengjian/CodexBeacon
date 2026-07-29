@@ -178,7 +178,8 @@ final class LocalDiagnosticStore: @unchecked Sendable {
 
   /// Entries older than this duration are pruned periodically during background flushes.
   private let retentionDuration: TimeInterval = 300 // 5 minutes
-  private let minimumPruneInterval: TimeInterval = 15
+  private let minimumPruneInterval: TimeInterval = 60
+  private let maximumFileBytes: Int
   private var pendingEntries: [(text: String, date: Date)] = []
   private var writeIsScheduled = false
   private var lastPrunedAt: Date?
@@ -186,6 +187,7 @@ final class LocalDiagnosticStore: @unchecked Sendable {
   init(
     fileManager: FileManager = .default,
     directory: URL? = nil,
+    maximumFileBytes: Int = 64 * 1_024,
     writeQueue: DispatchQueue = .init(
       label: "com.codexbeacon.task-monitoring-diagnostic",
       qos: .utility
@@ -194,6 +196,7 @@ final class LocalDiagnosticStore: @unchecked Sendable {
     self.directory = directory ?? fileManager.homeDirectoryForCurrentUser
       .appendingPathComponent("Library/Application Support/CodexBeacon")
     fileURL = self.directory.appendingPathComponent("task-monitoring-diagnostic.txt")
+    self.maximumFileBytes = maximumFileBytes
     self.writeQueue = writeQueue
   }
 
@@ -270,6 +273,7 @@ final class LocalDiagnosticStore: @unchecked Sendable {
         try pruneEntries(at: newestEntryDate)
         lastPrunedAt = newestEntryDate
       }
+      try trimToMaximumFileSize()
     } catch {
       // Diagnostics must never interfere with passive task observation.
     }
@@ -313,6 +317,37 @@ final class LocalDiagnosticStore: @unchecked Sendable {
     let kept = Array(lines[0..<headerEnd]) + Array(lines[keepFrom..<lines.count])
 
     let result = kept.joined(separator: "\n")
+    try result.write(to: fileURL, atomically: true, encoding: .utf8)
+  }
+
+  /// Retains the diagnostic header and the newest complete entries within a
+  /// small byte budget. This protects the observer from a bursty server while
+  /// keeping the most recent failure context exportable.
+  private func trimToMaximumFileSize() throws {
+    let attributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
+    guard let size = attributes[.size] as? NSNumber, size.intValue > maximumFileBytes else {
+      return
+    }
+
+    let lines = try String(contentsOf: fileURL, encoding: .utf8)
+      .components(separatedBy: "\n")
+    var headerEnd = 0
+    for line in lines {
+      if parseTimestamp(from: line) != nil { break }
+      headerEnd += 1
+    }
+
+    let header = Array(lines.prefix(headerEnd))
+    var keptEntries: [String] = []
+    var usedBytes = header.joined(separator: "\n").lengthOfBytes(using: .utf8) + 1
+    for line in lines.dropFirst(headerEnd).reversed() where !line.isEmpty {
+      let lineBytes = line.lengthOfBytes(using: .utf8) + 1
+      guard usedBytes + lineBytes <= maximumFileBytes else { continue }
+      keptEntries.append(line)
+      usedBytes += lineBytes
+    }
+
+    let result = (header + keptEntries.reversed()).joined(separator: "\n") + "\n"
     try result.write(to: fileURL, atomically: true, encoding: .utf8)
   }
 

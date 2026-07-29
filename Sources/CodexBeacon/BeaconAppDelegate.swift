@@ -116,18 +116,17 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
 
   private func handleTaskEvent(_ event: TaskEvent) {
     let statusBefore = coordinator.viewState.status
-    diagnosticStore.record(
-      "coordinator handling event=\(event.traceDescription) status_before=\(statusBefore.traceName)"
-    )
     let now = Date()
     coordinator.handle(.time(.advanced(to: now)))
     coordinator.handle(.task(event))
     let state = coordinator.viewState
     let completionSoundEvent = coordinator.drainCompletionSoundEvent()
     let hoverDetail = state.hoverDetail
-    diagnosticStore.record(
-      "coordinator state_resolved status_after=\(state.status.traceName) working=\(hoverDetail?.workingCount ?? 0) waiting=\(hoverDetail?.waitingCount ?? 0) completed=\(hoverDetail?.completedCount ?? 0) visible=\(state.isVisible)"
-    )
+    if statusBefore != state.status {
+      diagnosticStore.record(
+        "coordinator status_changed event=\(event.traceDescription) from=\(statusBefore.traceName) to=\(state.status.traceName) working=\(hoverDetail?.workingCount ?? 0) waiting=\(hoverDetail?.waitingCount ?? 0) completed=\(hoverDetail?.completedCount ?? 0)"
+      )
+    }
     taskMonitor?.updateQuotaRefreshInterval(for: coordinator.viewState.status)
     playTaskSounds(for: state, completionSoundEvent: completionSoundEvent)
 
@@ -228,10 +227,7 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
 
   private func updatePanelContent() {
     let state = coordinator.viewState
-    panel?.update(state: state)
-    diagnosticStore.record(
-      "ui panel_updated status=\(state.status.traceName) amber=\(state.lights[1].illumination.traceName) visible=\(state.isVisible) show_task_titles=\(state.showTaskTitles) hover_tasks=\(state.hoverDetail?.tasks.count ?? 0) hover_show_titles=\(state.hoverDetail?.showTaskTitles ?? false)"
-    )
+    _ = panel?.update(state: state)
   }
 
   private func updateReduceMotion() {

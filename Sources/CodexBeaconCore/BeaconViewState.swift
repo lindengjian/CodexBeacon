@@ -209,6 +209,20 @@ public struct HoverDetailState: Equatable, Sendable {
     }
     return parts.joined(separator: " · ")
   }
+
+  /// The timestamp is informative text, not visual state that warrants a full
+  /// SwiftUI tree update for every incoming App Server message.
+  public func hasSameVisibleContent(as other: HoverDetailState) -> Bool {
+    status == other.status
+      && workingCount == other.workingCount
+      && waitingCount == other.waitingCount
+      && completedCount == other.completedCount
+      && tasks == other.tasks
+      && quotaWindows == other.quotaWindows
+      && taskError == other.taskError
+      && quotaError == other.quotaError
+      && showTaskTitles == other.showTaskTitles
+  }
 }
 
 public struct BeaconViewState: Equatable, Sendable {
@@ -237,6 +251,35 @@ public struct BeaconViewState: Equatable, Sendable {
 
   public var dimensions: BeaconDimensions {
     size.dimensions(for: orientation)
+  }
+
+  /// Compares content that changes the rendered Beacon. `lastUpdatedAt` is
+  /// intentionally excluded so incoming protocol traffic cannot force a UI
+  /// transaction merely to refresh diagnostic text in a hidden popover.
+  public func hasSameVisibleContent(as other: BeaconViewState) -> Bool {
+    isVisible == other.isVisible
+      && size == other.size
+      && orientation == other.orientation
+      && surface == other.surface
+      && lights == other.lights
+      && quotaTrack == other.quotaTrack
+      && status == other.status
+      && reducesMotion == other.reducesMotion
+      && waitingTasks == other.waitingTasks
+      && unconfirmedCompletionTaskIDs == other.unconfirmedCompletionTaskIDs
+      && showTaskTitles == other.showTaskTitles
+      && pendingResetEvents == other.pendingResetEvents
+      && activeResetMessage == other.activeResetMessage
+      && activeResetMessageExpiresAt == other.activeResetMessageExpiresAt
+      && sameVisibleHoverDetail(as: other)
+  }
+
+  private func sameVisibleHoverDetail(as other: BeaconViewState) -> Bool {
+    switch (hoverDetail, other.hoverDetail) {
+    case (nil, nil): true
+    case let (lhs?, rhs?): lhs.hasSameVisibleContent(as: rhs)
+    default: false
+    }
   }
 
   public init(

@@ -86,7 +86,8 @@ struct IdleBeaconView: View {
       LightRecess(
         light: light,
         diameter: isCompact ? 14 : 32,
-        reducesMotion: state.reducesMotion
+        reducesMotion: state.reducesMotion,
+        isVisible: state.isVisible
       )
     }
   }
@@ -155,6 +156,7 @@ private struct LightRecess: View {
   let light: BeaconLightState
   let diameter: Double
   let reducesMotion: Bool
+  let isVisible: Bool
 
   private var logic: LightRenderLogic {
     LightRenderLogic(illumination: light.illumination, reducesMotion: reducesMotion)
@@ -183,7 +185,7 @@ private struct LightRecess: View {
     }
     .overlay {
       TimelineView(
-        .animation(minimumInterval: 1.0 / 30.0, paused: !logic.shouldAnimate)
+        .animation(minimumInterval: 1.0 / 15.0, paused: !logic.shouldAnimate || !isVisible)
       ) { context in
         Circle()
           .fill(color.opacity(logic.showsWaitingRing ? 0 : logic.displayedOpacity(at: context.date)))

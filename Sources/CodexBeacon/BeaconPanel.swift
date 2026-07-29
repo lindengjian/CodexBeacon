@@ -120,12 +120,20 @@ final class BeaconPanel: NSPanel {
     }
   }
 
-  func update(state: BeaconViewState) {
+  @discardableResult
+  func update(state: BeaconViewState) -> Bool {
+    let previous = stateStore.state
+    guard !previous.hasSameVisibleContent(as: state) else {
+      return false
+    }
     stateStore.state = state
-    if let glassView = glassView {
+    if let glassView = glassView,
+      previous.dimensions != state.dimensions || previous.surface != state.surface
+    {
       let size = NSSize(width: state.dimensions.width, height: state.dimensions.height)
       applyGlassMask(to: glassView, size: size, surface: state.surface)
     }
+    return true
   }
 
   // MARK: - Border pulse

@@ -9,6 +9,7 @@ import os
 /// requests. Desktop adoption is deliberately an explicit repair action
 /// outside this passive observer.
 final class DesktopAppServerMonitor: @unchecked Sendable {
+  private static let snapshotInterval: TimeInterval = 5
   typealias EventHandler = (TaskEvent) -> Void
   typealias RequestsProvider = () -> [AppServerRequest]
 
@@ -263,10 +264,6 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
       return
     }
 
-    diagnosticStore.record(
-      "protocol received generation=\(generation) \(Self.diagnosticEntry(for: object))"
-    )
-
     recordQuotaRefreshResponse(from: object)
 
     if !didInitialize {
@@ -310,11 +307,13 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
       thread["threadSource"] as? String != "system",
       thread["parentThreadId"] == nil || thread["parentThreadId"] is NSNull
     {
-      sawSharedDesktopRuntime = true
-      reconnectBackoff.recordSuccessfulConnection()
-      compatibilityAdapter.sharedRuntimeEvidenceObserved()
-      diagnosticStore.record("runtime shared_desktop_evidence_observed")
-      hasSharedDesktopRuntime = true
+      hasSharedDesktopRuntime = !sawSharedDesktopRuntime
+      if hasSharedDesktopRuntime {
+        sawSharedDesktopRuntime = true
+        reconnectBackoff.recordSuccessfulConnection()
+        compatibilityAdapter.sharedRuntimeEvidenceObserved()
+        diagnosticStore.record("runtime shared_desktop_evidence_observed")
+      }
     } else {
       hasSharedDesktopRuntime = false
     }
@@ -350,9 +349,6 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
       if request.method == "account/rateLimits/read" {
         recordQuotaRefreshRequest(request.id)
       }
-      diagnosticStore.record(
-        "protocol sent id=\(request.id) method=\(request.method)"
-      )
       client?.send(["id": request.id, "method": request.method, "params": params])
     }
   }
@@ -397,17 +393,16 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
       return
     }
     let timer = DispatchSource.makeTimerSource(queue: .main)
-    diagnosticStore.record("snapshot_timer started interval_seconds=2")
+    diagnosticStore.record("snapshot_timer started interval_seconds=\(Self.snapshotInterval)")
     timer.schedule(
-      deadline: .now() + 2,
-      repeating: 2,
+      deadline: .now() + Self.snapshotInterval,
+      repeating: Self.snapshotInterval,
       leeway: .milliseconds(250)
     )
     timer.setEventHandler { [weak self] in
       guard let self, !self.isStopped else {
         return
       }
-      self.diagnosticStore.record("snapshot_timer fired")
       self.dispatch([.monitoringSnapshotRequested], flushesRequests: true)
     }
     snapshotTimer = timer
@@ -447,10 +442,6 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
       )
     }
     quotaRefreshRequests[requestID] = now
-    diagnosticStore.record("quota_refresh sent id=\(requestID)")
-    Logger(subsystem: "com.codexbeacon", category: "quota-refresh").debug(
-      "[quota-refresh] sent account/rateLimits/read id=\(requestID, privacy: .public)"
-    )
   }
 
   private func recordQuotaRefreshResponse(from object: [String: Any]) {
@@ -478,12 +469,6 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
       return
     }
     consecutiveQuotaRefreshFailures = 0
-    diagnosticStore.record(
-      "quota_refresh received_success id=\(requestID) latency_ms=\(elapsedMilliseconds)"
-    )
-    Logger(subsystem: "com.codexbeacon", category: "quota-refresh").debug(
-      "[quota-refresh] received success id=\(requestID, privacy: .public) latency_ms=\(elapsedMilliseconds, privacy: .public)"
-    )
   }
 
   private func recordQuotaRefreshFailure(
@@ -505,9 +490,6 @@ final class DesktopAppServerMonitor: @unchecked Sendable {
       guard let self, !self.isStopped else {
         return
       }
-      self.diagnosticStore.record(
-        "event dispatch events=\(events.map(\.traceDescription).joined(separator: ",")) flush_requests=\(flushesRequests)"
-      )
       events.forEach(self.deliver)
       if flushesRequests {
         self.flushRequests()

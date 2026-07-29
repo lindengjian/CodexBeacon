@@ -12,7 +12,7 @@ It fails closed: when current, reliable Desktop runtime evidence is unavailable,
 
 ## Download
 
-[Download Codex Beacon 1.0.6](https://github.com/lindengjian/CodexBeacon/releases/tag/v1.0.6)
+[Download Codex Beacon 1.0.7](https://github.com/lindengjian/CodexBeacon/releases/tag/v1.0.7)
 
 The release page includes the Apple Silicon DMG and its SHA-256 checksum.
 
@@ -24,7 +24,7 @@ The release page includes the Apple Silicon DMG and its SHA-256 checksum.
 
 ### Install
 
-1. Download and open `CodexBeacon-1.0.6-arm64.dmg`.
+1. Download and open `CodexBeacon-1.0.7-arm64.dmg`.
 2. Drag **Codex Beacon** to **Applications**.
 3. Open Codex Beacon from Applications. If macOS asks you to confirm opening it, follow the system prompt.
 

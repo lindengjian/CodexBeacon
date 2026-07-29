@@ -38,6 +38,23 @@ struct BeaconPanelDragTests {
     #expect(BeaconGlassStyle.surfaceTintOpacity == 0.18)
   }
 
+  @Test("visually unchanged Beacon state does not republish the SwiftUI panel")
+  func panelSkipsVisuallyUnchangedState() {
+    _ = NSApplication.shared
+    let panel = BeaconPanel(state: .idle, onActivate: {}, onDragEnded: {})
+    defer { panel.close() }
+
+    var timestampOnlyChange = BeaconViewState.idle
+    timestampOnlyChange.lastUpdatedAt = Date()
+
+    #expect(panel.update(state: timestampOnlyChange) == false)
+
+    var visibleChange = timestampOnlyChange
+    visibleChange.quotaTrack = .init(style: .gauge, fillFraction: 0.5)
+
+    #expect(panel.update(state: visibleChange) == true)
+  }
+
   @Test("releasing a dragged Beacon notifies the placement coordinator")
   func releasingBeaconNotifiesPlacementCoordinator() {
     _ = NSApplication.shared
