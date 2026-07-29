@@ -162,6 +162,25 @@ struct BeaconSettingsScenarioTests {
     #expect(saved.count == 3)
   }
 
+  @Test("settings appearance selection updates the persisted user choice")
+  func settingsAppearanceSelectionUpdatesUserChoice() {
+    var savedAppearances: [BeaconAppearance] = []
+    let settings = BeaconSettingsModel(
+      size: .standard,
+      hotKey: .init(keyCode: 8, modifiers: 6_400),
+      registrationError: nil,
+      appearance: .system,
+      onSizeSelected: { _ in },
+      onHotKeySelected: { _ in nil },
+      onAppearanceSelected: { savedAppearances.append($0) }
+    )
+
+    settings.selectAppearance(.dark)
+
+    #expect(settings.appearance == .dark)
+    #expect(savedAppearances == [.dark])
+  }
+
   @Test("settings preview plays the selected sound without persisting preferences")
   func settingsPreviewPlaysSelectedSoundWithoutPersistingPreferences() {
     var saved: [BeaconSoundPreferences] = []

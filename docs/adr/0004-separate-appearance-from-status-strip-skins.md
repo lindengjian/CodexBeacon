@@ -1,0 +1,3 @@
+# Separate appearance from status-strip skins
+
+Codex Beacon persists the user's raw appearance choice—light, dark, or follow system—and defaults to follow system for both new and migrated preferences. Appearance controls the settings and setup windows plus the native translucent glass background of the status strip when no skin image is configured; a future skin image overrides only that background, leaving the task-status colours, quota ring, layout, and other windows unchanged. This boundary preserves native macOS appearance behaviour today while allowing skins later without weakening the Beacon's status semantics.

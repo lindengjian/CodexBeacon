@@ -135,6 +135,54 @@ struct BeaconPreferencesTests {
     #expect(!restoredAgain.showTaskTitles)
   }
 
+  @Test("appearance choice persists as the user's original selection")
+  func appearanceChoicePersists() throws {
+    let suiteName = "BeaconPreferencesTests.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+
+    let store = BeaconPreferencesStore(defaults: defaults)
+    let hotKey = BeaconHotKey(keyCode: 8, modifiers: 6_400)
+    let expected = BeaconPreferences(
+      size: .standard,
+      hotKey: hotKey,
+      anchor: nil,
+      appearance: .dark
+    )
+
+    store.save(expected)
+
+    #expect(store.load(fallbackHotKey: hotKey).appearance == .dark)
+  }
+
+  @Test("legacy preferences default to following the system appearance")
+  func legacyPreferencesDefaultToSystemAppearance() throws {
+    let suiteName = "BeaconPreferencesTests.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+
+    let data = try #require(
+      """
+      {"size":"standard","hotKey":{"keyCode":8,"modifiers":6400},"anchor":null}
+      """.data(using: .utf8)
+    )
+    defaults.set(data, forKey: "beaconPreferences")
+
+    let restored = BeaconPreferencesStore(defaults: defaults).load(
+      fallbackHotKey: .init(keyCode: 8, modifiers: 6_400)
+    )
+
+    #expect(restored.appearance == .system)
+  }
+
+  @Test("following the system resolves against the current system scheme")
+  func systemAppearanceResolvesAgainstSystemScheme() {
+    #expect(BeaconAppearance.system.resolved(for: .light) == .light)
+    #expect(BeaconAppearance.system.resolved(for: .dark) == .dark)
+    #expect(BeaconAppearance.light.resolved(for: .dark) == .light)
+    #expect(BeaconAppearance.dark.resolved(for: .light) == .dark)
+  }
+
   @Test("event sound defaults keep waiting and completion off while reset is on")
   func eventSoundDefaults() {
     let preferences = BeaconPreferences(

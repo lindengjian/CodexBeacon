@@ -65,12 +65,12 @@ When tasks differ, this order determines the displayed signal. With macOS **Redu
 - Shows aggregate task counts, quota windows, reset times, update time, and monitoring errors on hover. Task titles are hidden by default.
 - Selects the shortest currently reported quota window automatically; it does not assume a fixed five-hour or weekly window.
 - Alerts on a confirmable quota reset with a notification, optional sound, a five-second frame pulse, and a temporary message. Nearby resets are combined into one alert.
-- Supports standard (`62 × 229 pt`) and compact (`24 × 88 pt`) sizes, a configurable global shortcut, launch at login, and separate sounds for Approval, Completed, and quota reset.
+- Supports standard (`62 × 229 pt`) and compact (`24 × 88 pt`) sizes, a configurable global shortcut, launch at login, light/dark/follow-system appearance, and separate sounds for Approval, Completed, and quota reset.
 
 ## Planned support
 
 - [ ] Windows support.
-- [ ] Light and dark appearance switching.
+- [x] Light, dark, and follow-system appearance switching.
 - [ ] Custom themes and skins.
 
 ## Use

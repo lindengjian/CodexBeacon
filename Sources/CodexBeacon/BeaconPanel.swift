@@ -67,7 +67,6 @@ final class BeaconPanel: NSPanel {
     let glassView = NSVisualEffectView(frame: contentRect)
     glassView.blendingMode = .behindWindow
     glassView.material = .popover
-    glassView.appearance = NSAppearance(named: .vibrantDark)
     glassView.state = .active
     glassView.alphaValue = BeaconGlassStyle.visualEffectAlpha
     glassView.autoresizingMask = [.width, .height]
@@ -84,6 +83,7 @@ final class BeaconPanel: NSPanel {
     rootView.addSubview(glassView)
     rootView.addSubview(hostingView)
     contentView = rootView
+    updateAppearance(.system, systemScheme: currentSystemAppearanceScheme())
   }
 
   override func rightMouseDown(with event: NSEvent) {
@@ -118,6 +118,16 @@ final class BeaconPanel: NSPanel {
     if let glassView = glassView {
       applyGlassMask(to: glassView, size: frame.size, surface: stateStore.state.surface)
     }
+  }
+
+  func updateAppearance(
+    _ appearance: BeaconAppearance,
+    systemScheme: BeaconAppearanceScheme
+  ) {
+    let resolved = appearance.resolved(for: systemScheme)
+    glassView?.appearance = NSAppearance(
+      named: resolved == .light ? .vibrantLight : .vibrantDark
+    )
   }
 
   @discardableResult
@@ -209,6 +219,10 @@ final class BeaconPanel: NSPanel {
 
   private var glassView: NSVisualEffectView? {
     contentView?.subviews.compactMap { $0 as? NSVisualEffectView }.first
+  }
+
+  private func currentSystemAppearanceScheme() -> BeaconAppearanceScheme {
+    NSApp.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? .dark : .light
   }
 
   private func applyGlassMask(

@@ -38,6 +38,20 @@ struct BeaconPanelDragTests {
     #expect(BeaconGlassStyle.surfaceTintOpacity == 0.18)
   }
 
+  @Test("Beacon glass updates for explicit and system-resolved appearances")
+  func beaconGlassUpdatesForAppearance() {
+    _ = NSApplication.shared
+    let panel = BeaconPanel(state: .idle, onActivate: {}, onDragEnded: {})
+    defer { panel.close() }
+
+    panel.updateAppearance(.light, systemScheme: .dark)
+    let visualEffectView = panel.contentView?.subviews.compactMap { $0 as? NSVisualEffectView }.first
+    #expect(visualEffectView?.appearance?.name == .vibrantLight)
+
+    panel.updateAppearance(.system, systemScheme: .dark)
+    #expect(visualEffectView?.appearance?.name == .vibrantDark)
+  }
+
   @Test("visually unchanged Beacon state does not republish the SwiftUI panel")
   func panelSkipsVisuallyUnchangedState() {
     _ = NSApplication.shared

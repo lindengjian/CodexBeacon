@@ -65,10 +65,12 @@ struct BeaconSettingsView: View {
     registrationError: String? = nil,
     showTaskTitles: Bool = false,
     soundPreferences: BeaconSoundPreferences = .init(),
+    appearance: BeaconAppearance = .system,
     onSizeSelected: @escaping (BeaconSize) -> Void,
     onHotKeySelected: @escaping (BeaconHotKey) -> String?,
     onShowTaskTitlesChanged: @escaping (Bool) -> Void = { _ in },
     onSoundPreferencesChanged: @escaping (BeaconSoundPreferences) -> Void = { _ in },
+    onAppearanceSelected: @escaping (BeaconAppearance) -> Void = { _ in },
     onSoundPreviewRequested: @escaping @MainActor (String) -> Void = { _ in },
     integrationSettings: BeaconIntegrationSettingsModel? = nil
   ) {
@@ -79,10 +81,12 @@ struct BeaconSettingsView: View {
         registrationError: registrationError,
         showTaskTitles: showTaskTitles,
         soundPreferences: soundPreferences,
+        appearance: appearance,
         onSizeSelected: onSizeSelected,
         onHotKeySelected: onHotKeySelected,
         onShowTaskTitlesChanged: onShowTaskTitlesChanged,
         onSoundPreferencesChanged: onSoundPreferencesChanged,
+        onAppearanceSelected: onAppearanceSelected,
         onSoundPreviewRequested: onSoundPreviewRequested
       )
     )
@@ -103,6 +107,25 @@ struct BeaconSettingsView: View {
         .labelsHidden()
         .pickerStyle(.menu)
         .frame(width: 220, alignment: .leading)
+      }
+
+      VStack(alignment: .leading, spacing: 8) {
+        Text("外观")
+        HStack(spacing: 14) {
+          ForEach(BeaconAppearance.allCases, id: \.self) { appearance in
+            Button {
+              model.selectAppearance(appearance)
+            } label: {
+              AppearancePreview(appearance: appearance, isSelected: model.appearance == appearance)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(appearance.displayName)
+            .accessibilityValue(model.appearance == appearance ? "已选择" : "")
+          }
+        }
+        Text("跟随系统会在 macOS 切换亮暗外观时立即同步。")
+          .font(.caption)
+          .foregroundStyle(.secondary)
       }
 
       VStack(alignment: .leading, spacing: 8) {
@@ -202,11 +225,13 @@ final class BeaconSettingsModel: ObservableObject {
   @Published var hotKeyError: String?
   @Published private(set) var showTaskTitles: Bool
   @Published private(set) var soundPreferences: BeaconSoundPreferences
+  @Published private(set) var appearance: BeaconAppearance
 
   private let onSizeSelected: (BeaconSize) -> Void
   private let onHotKeySelected: (BeaconHotKey) -> String?
   private let onShowTaskTitlesChanged: (Bool) -> Void
   private let onSoundPreferencesChanged: (BeaconSoundPreferences) -> Void
+  private let onAppearanceSelected: (BeaconAppearance) -> Void
   private let onSoundPreviewRequested: @MainActor (String) -> Void
 
   init(
@@ -215,10 +240,12 @@ final class BeaconSettingsModel: ObservableObject {
     registrationError: String?,
     showTaskTitles: Bool = false,
     soundPreferences: BeaconSoundPreferences = .init(),
+    appearance: BeaconAppearance = .system,
     onSizeSelected: @escaping (BeaconSize) -> Void,
     onHotKeySelected: @escaping (BeaconHotKey) -> String?,
     onShowTaskTitlesChanged: @escaping (Bool) -> Void = { _ in },
     onSoundPreferencesChanged: @escaping (BeaconSoundPreferences) -> Void = { _ in },
+    onAppearanceSelected: @escaping (BeaconAppearance) -> Void = { _ in },
     onSoundPreviewRequested: @escaping @MainActor (String) -> Void = { _ in }
   ) {
     self.size = size
@@ -226,10 +253,12 @@ final class BeaconSettingsModel: ObservableObject {
     hotKeyError = registrationError
     self.showTaskTitles = showTaskTitles
     self.soundPreferences = soundPreferences
+    self.appearance = appearance
     self.onSizeSelected = onSizeSelected
     self.onHotKeySelected = onHotKeySelected
     self.onShowTaskTitlesChanged = onShowTaskTitlesChanged
     self.onSoundPreferencesChanged = onSoundPreferencesChanged
+    self.onAppearanceSelected = onAppearanceSelected
     self.onSoundPreviewRequested = onSoundPreviewRequested
   }
 
@@ -255,6 +284,12 @@ final class BeaconSettingsModel: ObservableObject {
     guard showTaskTitles != enabled else { return }
     showTaskTitles = enabled
     onShowTaskTitlesChanged(enabled)
+  }
+
+  func selectAppearance(_ appearance: BeaconAppearance) {
+    guard self.appearance != appearance else { return }
+    self.appearance = appearance
+    onAppearanceSelected(appearance)
   }
 
   func updateSoundEnabled(_ enabled: Bool, for event: BeaconSoundEvent) {
@@ -415,5 +450,67 @@ private extension BeaconHotKey {
       UInt32(kVK_ANSI_Y): "Y", UInt32(kVK_ANSI_Z): "Z",
     ]
     return names[keyCode] ?? "键 \(keyCode)"
+  }
+}
+
+private extension BeaconAppearance {
+  var displayName: String {
+    switch self {
+    case .system: "跟随系统"
+    case .light: "亮"
+    case .dark: "暗"
+    }
+  }
+}
+
+private struct AppearancePreview: View {
+  let appearance: BeaconAppearance
+  let isSelected: Bool
+
+  var body: some View {
+    VStack(spacing: 6) {
+      ZStack(alignment: .bottom) {
+        RoundedRectangle(cornerRadius: 10, style: .continuous)
+          .fill(previewBackground)
+
+        RoundedRectangle(cornerRadius: 6, style: .continuous)
+          .fill(previewSurface)
+          .frame(width: 58, height: 30)
+          .overlay(alignment: .topLeading) {
+            Capsule()
+              .fill(Color.accentColor)
+              .frame(width: 38, height: 6)
+              .padding(5)
+          }
+          .padding(8)
+      }
+      .frame(width: 92, height: 58)
+      .overlay {
+        RoundedRectangle(cornerRadius: 10, style: .continuous)
+          .stroke(isSelected ? Color.accentColor : .clear, lineWidth: 3)
+      }
+
+      Text(appearance.displayName)
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(.primary)
+    }
+  }
+
+  private var previewBackground: LinearGradient {
+    switch appearance {
+    case .system:
+      LinearGradient(colors: [.gray.opacity(0.55), .blue.opacity(0.55)], startPoint: .topLeading, endPoint: .bottomTrailing)
+    case .light:
+      LinearGradient(colors: [.white, .gray.opacity(0.3)], startPoint: .topLeading, endPoint: .bottomTrailing)
+    case .dark:
+      LinearGradient(colors: [.blue.opacity(0.7), .black.opacity(0.95)], startPoint: .topLeading, endPoint: .bottomTrailing)
+    }
+  }
+
+  private var previewSurface: Color {
+    switch appearance {
+    case .system, .light: .white.opacity(0.8)
+    case .dark: .black.opacity(0.68)
+    }
   }
 }

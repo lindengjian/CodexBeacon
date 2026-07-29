@@ -24,6 +24,7 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
   private var screenParametersObserver: NSObjectProtocol?
   private var frontmostAppObserver: NSObjectProtocol?
   private var accessibilityDisplayOptionsObserver: NSObjectProtocol?
+  private var appearanceObservation: NSKeyValueObservation?
   private var codexBundleID = "com.anthropic.codex"
   private var hotKeyReference: EventHotKeyRef?
   private var hotKeyEventHandlerReference: EventHandlerRef?
@@ -50,6 +51,7 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
       self?.canAutoConfirmCompletion() ?? false
     }
     present(coordinator.viewState)
+    applyAppearance()
     updateReduceMotion()
     perform(coordinator.drainEffects())
     updateDisplayLayout()
@@ -82,6 +84,11 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
         self?.updateReduceMotion()
       }
     }
+    appearanceObservation = NSApp.observe(\.effectiveAppearance, options: [.new]) { [weak self] _, _ in
+      Task { @MainActor [weak self] in
+        self?.applyAppearance()
+      }
+    }
     taskMonitor = DesktopAppServerMonitor(
       deliver: { [weak self] event in self?.handleTaskEvent(event) },
       requestsProvider: { [weak self] in self?.coordinator.drainAppServerRequests() ?? [] },
@@ -111,6 +118,7 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
     if let accessibilityDisplayOptionsObserver {
       NSWorkspace.shared.notificationCenter.removeObserver(accessibilityDisplayOptionsObserver)
     }
+    appearanceObservation?.invalidate()
     unregisterGlobalHotKey()
   }
 
@@ -397,6 +405,7 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
       registrationError: hotKeyRegistrationError,
       showTaskTitles: preferences.showTaskTitles,
       soundPreferences: preferences.soundPreferences,
+      appearance: preferences.appearance,
       onSizeSelected: { [weak self] size in
         self?.updateBeaconSize(size)
       },
@@ -408,6 +417,9 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
       },
       onSoundPreferencesChanged: { [weak self] soundPreferences in
         self?.updateSoundPreferences(soundPreferences)
+      },
+      onAppearanceSelected: { [weak self] appearance in
+        self?.updateAppearance(appearance)
       },
       onSoundPreviewRequested: { soundName in
         BeaconSystemSound.play(named: soundName)
@@ -613,6 +625,29 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
   private func updateSoundPreferences(_ soundPreferences: BeaconSoundPreferences) {
     preferences.soundPreferences = soundPreferences
     preferencesStore.save(preferences)
+  }
+
+  private func updateAppearance(_ appearance: BeaconAppearance) {
+    guard preferences.appearance != appearance else { return }
+    preferences.appearance = appearance
+    preferencesStore.save(preferences)
+    applyAppearance()
+  }
+
+  private func applyAppearance() {
+    switch preferences.appearance {
+    case .system:
+      NSApp.appearance = nil
+    case .light:
+      NSApp.appearance = NSAppearance(named: .aqua)
+    case .dark:
+      NSApp.appearance = NSAppearance(named: .darkAqua)
+    }
+    panel?.updateAppearance(preferences.appearance, systemScheme: currentSystemAppearanceScheme())
+  }
+
+  private func currentSystemAppearanceScheme() -> BeaconAppearanceScheme {
+    NSApp.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? .dark : .light
   }
 
   private func replaceGlobalHotKey(with hotKey: BeaconHotKey) -> String? {
