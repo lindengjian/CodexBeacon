@@ -127,8 +127,6 @@ struct BeaconIntegrationSettingsSection: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
-      Divider()
-
       Toggle(
         "登录时启动 Beacon",
         isOn: Binding(

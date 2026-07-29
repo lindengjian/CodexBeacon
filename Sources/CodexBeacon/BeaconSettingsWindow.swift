@@ -5,9 +5,12 @@ import SwiftUI
 
 @MainActor
 final class BeaconSettingsWindowController: NSWindowController {
-  init(rootView: BeaconSettingsView) {
+  private let navigation: BeaconSettingsNavigationModel
+
+  init(rootView: BeaconSettingsView, navigation: BeaconSettingsNavigationModel) {
+    self.navigation = navigation
     let window = NSWindow(
-      contentRect: NSRect(x: 0, y: 0, width: 460, height: 690),
+      contentRect: NSRect(x: 0, y: 0, width: 640, height: 620),
       styleMask: [.titled, .closable],
       backing: .buffered,
       defer: false
@@ -24,6 +27,7 @@ final class BeaconSettingsWindowController: NSWindowController {
   }
 
   func present() {
+    navigation.reset()
     showWindow(nil)
     window?.makeKeyAndOrderFront(nil)
   }
@@ -55,8 +59,44 @@ final class InitialSetupWindowController: NSWindowController {
   }
 }
 
+enum BeaconSettingsPage: CaseIterable, Equatable, Hashable {
+  case general
+  case alerts
+  case integration
+
+  var title: String {
+    switch self {
+    case .general: "常规"
+    case .alerts: "提醒"
+    case .integration: "集成"
+    }
+  }
+
+  var symbolName: String {
+    switch self {
+    case .general: "gearshape"
+    case .alerts: "bell.badge"
+    case .integration: "puzzlepiece.extension"
+    }
+  }
+
+  static func availablePages(hasIntegrationSettings: Bool) -> [BeaconSettingsPage] {
+    hasIntegrationSettings ? allCases : [.general, .alerts]
+  }
+}
+
+@MainActor
+final class BeaconSettingsNavigationModel: ObservableObject {
+  @Published var selectedPage: BeaconSettingsPage = .general
+
+  func reset() {
+    selectedPage = .general
+  }
+}
+
 struct BeaconSettingsView: View {
   @StateObject private var model: BeaconSettingsModel
+  @ObservedObject private var navigation: BeaconSettingsNavigationModel
   let integrationSettings: BeaconIntegrationSettingsModel?
 
   init(
@@ -72,7 +112,8 @@ struct BeaconSettingsView: View {
     onSoundPreferencesChanged: @escaping (BeaconSoundPreferences) -> Void = { _ in },
     onAppearanceSelected: @escaping (BeaconAppearance) -> Void = { _ in },
     onSoundPreviewRequested: @escaping @MainActor (String) -> Void = { _ in },
-    integrationSettings: BeaconIntegrationSettingsModel? = nil
+    integrationSettings: BeaconIntegrationSettingsModel? = nil,
+    navigation: BeaconSettingsNavigationModel
   ) {
     _model = StateObject(
       wrappedValue: BeaconSettingsModel(
@@ -91,9 +132,54 @@ struct BeaconSettingsView: View {
       )
     )
     self.integrationSettings = integrationSettings
+    self.navigation = navigation
   }
 
   var body: some View {
+    VStack(spacing: 0) {
+      settingsNavigationHeader
+      Divider()
+
+      VStack(alignment: .leading, spacing: 18) {
+        switch navigation.selectedPage {
+        case .general:
+          generalSettings
+        case .alerts:
+          alertSettings
+        case .integration:
+          if let integrationSettings {
+            BeaconIntegrationSettingsSection(model: integrationSettings)
+          }
+        }
+
+        Spacer(minLength: 0)
+      }
+      .padding(20)
+    }
+    .frame(width: 640, height: 620, alignment: .topLeading)
+  }
+
+  private var settingsNavigationHeader: some View {
+    HStack(spacing: 18) {
+      ForEach(
+        BeaconSettingsPage.availablePages(hasIntegrationSettings: integrationSettings != nil),
+        id: \.self
+      ) { page in
+        Button {
+          navigation.selectedPage = page
+        } label: {
+          SettingsNavigationItem(page: page, isSelected: navigation.selectedPage == page)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(page.title)
+        .accessibilityValue(navigation.selectedPage == page ? "已选择" : "")
+      }
+    }
+    .frame(maxWidth: .infinity)
+    .frame(height: 72, alignment: .center)
+  }
+
+  private var generalSettings: some View {
     VStack(alignment: .leading, spacing: 18) {
       VStack(alignment: .leading, spacing: 8) {
         Text("Beacon 尺寸")
@@ -160,53 +246,49 @@ struct BeaconSettingsView: View {
           .font(.caption)
           .foregroundStyle(.secondary)
       }
-
-      VStack(alignment: .leading, spacing: 8) {
-        Text("事件声音")
-        ForEach(BeaconSoundEvent.allCases, id: \.self) { event in
-          HStack(spacing: 10) {
-            Toggle(
-              soundEventTitle(event),
-              isOn: Binding(
-                get: { model.soundPreferences[event].isEnabled },
-                set: { model.updateSoundEnabled($0, for: event) }
-              )
-            )
-            .frame(width: 108, alignment: .leading)
-
-            Picker(
-              "\(soundEventTitle(event))声音",
-              selection: Binding(
-                get: { model.soundPreferences[event].soundName },
-                set: { model.updateSoundName($0, for: event) }
-              )
-            ) {
-              ForEach(BeaconSystemSound.availableNames, id: \.self) { name in
-                Text(name).tag(name)
-              }
-            }
-            .labelsHidden()
-            .frame(width: 150, alignment: .leading)
-
-            Button {
-              model.previewSound(for: event)
-            } label: {
-              Label("试听", systemImage: "play.fill")
-            }
-            .help("试听\(soundEventTitle(event))声音")
-          }
-        }
-        Text("声音使用 macOS 内置提示音；每类事件可单独启用和选择。")
-          .font(.caption)
-          .foregroundStyle(.secondary)
-      }
-
-      if let integrationSettings {
-        BeaconIntegrationSettingsSection(model: integrationSettings)
-      }
     }
-    .padding(20)
-    .frame(width: 460, alignment: .topLeading)
+  }
+
+  private var alertSettings: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      Text("事件声音")
+      ForEach(BeaconSoundEvent.allCases, id: \.self) { event in
+        HStack(spacing: 10) {
+          Toggle(
+            soundEventTitle(event),
+            isOn: Binding(
+              get: { model.soundPreferences[event].isEnabled },
+              set: { model.updateSoundEnabled($0, for: event) }
+            )
+          )
+          .frame(width: 108, alignment: .leading)
+
+          Picker(
+            "\(soundEventTitle(event))声音",
+            selection: Binding(
+              get: { model.soundPreferences[event].soundName },
+              set: { model.updateSoundName($0, for: event) }
+            )
+          ) {
+            ForEach(BeaconSystemSound.availableNames, id: \.self) { name in
+              Text(name).tag(name)
+            }
+          }
+          .labelsHidden()
+          .frame(width: 150, alignment: .leading)
+
+          Button {
+            model.previewSound(for: event)
+          } label: {
+            Label("试听", systemImage: "play.fill")
+          }
+          .help("试听\(soundEventTitle(event))声音")
+        }
+      }
+      Text("声音使用 macOS 内置提示音；每类事件可单独启用和选择。")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+    }
   }
 
   private func soundEventTitle(_ event: BeaconSoundEvent) -> String {
@@ -215,6 +297,34 @@ struct BeaconSettingsView: View {
     case .completion: "完成"
     case .quotaReset: "额度重置"
     }
+  }
+}
+
+private struct SettingsNavigationItem: View {
+  let page: BeaconSettingsPage
+  let isSelected: Bool
+
+  var body: some View {
+    VStack(spacing: 6) {
+      Image(systemName: page.symbolName)
+        .font(.system(size: 15, weight: .medium))
+        .frame(height: 17)
+      Text(page.title)
+        .font(.system(size: 15, weight: .medium))
+    }
+    .foregroundStyle(isSelected ? Color.accentColor : .secondary)
+    .frame(width: 54, height: 50)
+    .background {
+      if isSelected {
+        RoundedRectangle(cornerRadius: 12, style: .continuous)
+          .fill(Color.primary.opacity(0.06))
+          .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+              .strokeBorder(Color.white.opacity(0.5), lineWidth: 1)
+          }
+      }
+    }
+    .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
   }
 }
 

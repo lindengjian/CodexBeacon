@@ -399,6 +399,7 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     let integrationSettings = integrationSettingsModel ?? makeIntegrationSettingsModel()
+    let navigation = BeaconSettingsNavigationModel()
     let rootView = BeaconSettingsView(
       size: preferences.size,
       hotKey: preferences.hotKey,
@@ -424,9 +425,10 @@ final class BeaconAppDelegate: NSObject, NSApplicationDelegate {
       onSoundPreviewRequested: { soundName in
         BeaconSystemSound.play(named: soundName)
       },
-      integrationSettings: integrationSettings
+      integrationSettings: integrationSettings,
+      navigation: navigation
     )
-    let controller = BeaconSettingsWindowController(rootView: rootView)
+    let controller = BeaconSettingsWindowController(rootView: rootView, navigation: navigation)
     settingsWindowController = controller
     controller.present()
     NSApp.activate(ignoringOtherApps: true)

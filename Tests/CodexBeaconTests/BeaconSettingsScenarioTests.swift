@@ -7,6 +7,31 @@ import UserNotifications
 
 @MainActor
 struct BeaconSettingsScenarioTests {
+  @Test("settings groups are general, alerts, and integration when local integration is available")
+  func settingsPagesMatchTheConfirmedGroups() {
+    #expect(
+      BeaconSettingsPage.availablePages(hasIntegrationSettings: true)
+        == [.general, .alerts, .integration]
+    )
+    #expect(
+      BeaconSettingsPage.availablePages(hasIntegrationSettings: false)
+        == [.general, .alerts]
+    )
+    #expect(BeaconSettingsPage.general.symbolName == "gearshape")
+    #expect(BeaconSettingsPage.alerts.symbolName == "bell.badge")
+    #expect(BeaconSettingsPage.integration.symbolName == "puzzlepiece.extension")
+  }
+
+  @Test("opening settings resets navigation to the general page")
+  func settingsNavigationResetsToGeneral() {
+    let navigation = BeaconSettingsNavigationModel()
+    navigation.selectedPage = .integration
+
+    navigation.reset()
+
+    #expect(navigation.selectedPage == .general)
+  }
+
   @Test("initial setup defaults launch at login on and preserves the user's choice when completed")
   func initialSetupPersistsSelectedLaunchAtLoginChoice() {
     var completedLaunchAtLogin: Bool?
