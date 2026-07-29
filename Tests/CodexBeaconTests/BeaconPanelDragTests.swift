@@ -13,6 +13,7 @@ struct BeaconPanelDragTests {
     _ = NSApplication.shared
     let panel = BeaconPanel(state: .idle, onActivate: {}, onDragEnded: {})
     defer { panel.close() }
+    panel.updateAppearance(.dark, systemScheme: .light)
 
     #expect(!panel.hasShadow)
     let visualEffectView = panel.contentView?.subviews.compactMap { $0 as? NSVisualEffectView }.first

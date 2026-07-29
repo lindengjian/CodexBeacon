@@ -11,6 +11,7 @@ struct QuotaRefreshTimerTests {
     let recorder = TimerFireRecorder()
     let timer = QuotaRefreshTimer(
       interval: 1,
+      queue: DispatchQueue(label: "QuotaRefreshTimerTests.interval"),
       leeway: .milliseconds(1)
     ) {
       recorder.recordFire()
