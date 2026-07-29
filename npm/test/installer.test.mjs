@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import {
+  doctor,
   installApp,
   uninstallApp,
   validatePlatform,
@@ -75,6 +76,13 @@ test("install rejects platforms the bundled app cannot support", () => {
   assert.throws(
     () => validatePlatform({ platform: "linux", arch: "x64" }),
     /only supports macOS on Apple Silicon/
+  );
+});
+
+test("doctor without options reports a missing default installation instead of crashing", () => {
+  assert.throws(
+    () => doctor(),
+    /Codex Beacon is not installed; run `codex-beacon install`/
   );
 });
 

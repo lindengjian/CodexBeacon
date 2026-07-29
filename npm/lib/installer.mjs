@@ -112,7 +112,7 @@ export function doctor({
   platform = process.platform,
   arch = process.arch,
   verifyApp: verify = verifyApp,
-}) {
+} = {}) {
   validatePlatform({ platform, arch });
   assertAppBundle(installedApp, "Codex Beacon is not installed; run `codex-beacon install`");
   verify(installedApp);
