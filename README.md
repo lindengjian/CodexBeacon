@@ -12,7 +12,7 @@ Codex Beacon 是一个原生 macOS 工具，用类红绿灯展示 Codex Desktop 
 
 ## 下载
 
-[下载 Codex Beacon 1.0.1](https://github.com/lindengjian/CodexBeacon/releases/tag/v1.0.1)
+[下载 Codex Beacon 1.0.2](https://github.com/lindengjian/CodexBeacon/releases/tag/v1.0.2)
 
 Release 页面提供 Apple Silicon DMG 和对应的 SHA-256 校验值。
 
@@ -24,7 +24,7 @@ Release 页面提供 Apple Silicon DMG 和对应的 SHA-256 校验值。
 
 ### 安装
 
-1. 下载并打开 `CodexBeacon-1.0.1-arm64.dmg`。
+1. 下载并打开 `CodexBeacon-1.0.2-arm64.dmg`。
 2. 将 **Codex Beacon** 拖入 **Applications** 文件夹。
 3. 在 Applications 中打开 Codex Beacon；如 macOS 要求确认打开，请按系统提示操作。
 

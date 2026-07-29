@@ -3,13 +3,14 @@ import Testing
 
 @testable import CodexBeacon
 
+@Suite(.serialized)
 @MainActor
 struct QuotaRefreshTimerTests {
   @Test("a running quota timer immediately adopts a shorter working interval")
   func quotaTimerAdoptsShorterInterval() async throws {
     let recorder = TimerFireRecorder()
     let timer = QuotaRefreshTimer(
-      interval: 0.2,
+      interval: 1,
       leeway: .milliseconds(1)
     ) {
       recorder.recordFire()
@@ -19,9 +20,13 @@ struct QuotaRefreshTimerTests {
     timer.start()
     try await Task.sleep(for: .milliseconds(20))
     timer.update(interval: 0.02)
-    try await Task.sleep(for: .milliseconds(75))
 
-    #expect(recorder.fireCount >= 2)
+    let firedTwice = try await waitForTimerFires(
+      timeout: .milliseconds(300),
+      condition: { recorder.fireCount >= 2 }
+    )
+
+    #expect(firedTwice)
   }
 
   @Test("a stopped quota timer no longer emits refresh events")
@@ -35,14 +40,34 @@ struct QuotaRefreshTimerTests {
     }
 
     timer.start()
-    try await Task.sleep(for: .milliseconds(45))
+    let fired = try await waitForTimerFires(
+      timeout: .milliseconds(300),
+      condition: { recorder.fireCount > 0 }
+    )
     timer.stop()
     let firesBeforeWait = recorder.fireCount
-    try await Task.sleep(for: .milliseconds(45))
+    try await Task.sleep(for: .milliseconds(100))
 
-    #expect(firesBeforeWait > 0)
+    #expect(fired)
     #expect(recorder.fireCount == firesBeforeWait)
   }
+}
+
+private func waitForTimerFires(
+  timeout: Duration,
+  condition: @escaping @Sendable () -> Bool
+) async throws -> Bool {
+  let clock = ContinuousClock()
+  let deadline = clock.now + timeout
+
+  while !condition() {
+    guard clock.now < deadline else {
+      return false
+    }
+    try await Task.sleep(for: .milliseconds(5))
+  }
+
+  return true
 }
 
 private final class TimerFireRecorder: @unchecked Sendable {
