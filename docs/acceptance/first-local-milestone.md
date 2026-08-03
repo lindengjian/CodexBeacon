@@ -35,12 +35,13 @@ confirmable 额度重置, title privacy, accessibility motion reduction, display
 placement, and hidden-Beacon behavior.
 
 Protocol compatibility remains fail-closed: a missing shared runtime, an
-unsupported bundled CLI, incompatible daemon versions, invalid protocol data,
-or stale monitoring evidence presents **监测不可用** instead of **空闲**.
+unusable bundled CLI, a missing shared socket, a failed protocol handshake,
+invalid protocol data, or stale monitoring evidence presents **监测不可用**
+instead of **空闲**. Beacon does not gate this path on a CLI version allowlist.
 
 ## Real Codex Desktop and rollback acceptance
 
-Use a supported installed Codex Desktop version and a non-sensitive test task.
+Use an installed Codex Desktop version and a non-sensitive test task.
 
 1. Start the built Beacon and run the passive integration diagnostic.
 2. If prompted, choose **修复集成**, save work, fully quit and reopen Codex
@@ -55,8 +56,10 @@ Use a supported installed Codex Desktop version and a non-sensitive test task.
    environment value is restored, Desktop again uses its default private App
    Server topology, and the test task and sign-in state are unchanged.
 
-Do not run the adapter against an unsupported CLI version. Beacon must remain
-in **监测不可用** rather than attempting an unversioned integration.
+The adapter does not classify CLI versions as supported or unsupported. It may
+attempt any executable bundled by Codex Desktop, then remains in
+**监测不可用** if the socket, protocol handshake, passive-observer behavior,
+or shared Desktop runtime evidence cannot be verified.
 
 Owner verification on 2026-07-28: passed. The supported shared-daemon Desktop
 session observed loaded-task status without replying to server requests; the

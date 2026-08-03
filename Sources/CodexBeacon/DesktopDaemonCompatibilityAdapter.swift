@@ -2,14 +2,15 @@ import AppKit
 import Foundation
 
 /// Owns only the compatibility state created by Codex Beacon. The Desktop
-/// daemon flag is undocumented, so this adapter is intentionally version-gated
-/// and preserves any pre-existing launchd value for a lossless rollback.
+/// daemon flag is undocumented, so this adapter makes no CLI-version decision;
+/// the resulting socket, protocol handshake, and shared Desktop evidence are
+/// the compatibility checks. It preserves any pre-existing launchd value for
+/// a lossless rollback.
 final class DesktopDaemonCompatibilityAdapter {
   typealias LaunchctlRunner = (_ arguments: [String], _ allowFailure: Bool) throws -> String
 
   private static let label = "com.codexbeacon.shared-app-server"
   private static let environmentKey = "CODEX_APP_SERVER_USE_LOCAL_DAEMON"
-  private static let supportedCLIVersions = ["0.146.0-alpha.3.1"]
   private static let operationLock = NSLock()
 
   private let fileManager: FileManager
@@ -42,30 +43,26 @@ final class DesktopDaemonCompatibilityAdapter {
 
   /// Installs a user-scoped, labelled daemon and opt-in for the *next* Desktop
   /// process. It never terminates Desktop, because that could discard user work.
-  func prepare(bundledCLIURL: URL, cliVersion: String) -> String? {
+  func prepare(bundledCLIURL: URL) -> String? {
     Self.operationLock.lock()
     defer { Self.operationLock.unlock() }
-    return prepareLocked(bundledCLIURL: bundledCLIURL, cliVersion: cliVersion)
+    return prepareLocked(bundledCLIURL: bundledCLIURL)
   }
 
   /// Applies the user's saved integration choice when Beacon starts after a
   /// computer restart. A fresh install is adopted automatically; an existing
   /// adoption only restores this login's opt-in and never restarts Desktop.
-  func activateForCurrentLogin(bundledCLIURL: URL, cliVersion: String) -> String? {
+  func activateForCurrentLogin(bundledCLIURL: URL) -> String? {
     Self.operationLock.lock()
     defer { Self.operationLock.unlock() }
 
     if isPrepared {
       return restoreCurrentLoginOptInLocked(bundledCLIURL: bundledCLIURL)
     }
-    return prepareLocked(bundledCLIURL: bundledCLIURL, cliVersion: cliVersion)
+    return prepareLocked(bundledCLIURL: bundledCLIURL)
   }
 
-  private func prepareLocked(bundledCLIURL: URL, cliVersion: String) -> String? {
-    guard Self.supportedCLIVersions.contains(cliVersion) else {
-      return "Unsupported Codex Desktop CLI \(cliVersion). Shared-daemon adoption was not attempted."
-    }
-
+  private func prepareLocked(bundledCLIURL: URL) -> String? {
     do {
       try fileManager.createDirectory(
         at: launchAgentURL.deletingLastPathComponent(),
@@ -153,10 +150,6 @@ final class DesktopDaemonCompatibilityAdapter {
   var isPrepared: Bool {
     fileManager.fileExists(atPath: launchAgentURL.path)
       && fileManager.fileExists(atPath: stateURL.path)
-  }
-
-  static func supports(cliVersion: String) -> Bool {
-    supportedCLIVersions.contains(cliVersion)
   }
 
   private var userDomain: String { "gui/\(getuid())" }

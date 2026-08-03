@@ -78,6 +78,13 @@ public final class AppCoordinator {
     case .task(.monitoringRuntimeValidated):
       sharedRuntimeValidated = true
       presentTaskStatus(taskMonitor.status)
+    case .task(.monitoringRuntimeEvidenceUnavailable):
+      sharedRuntimeValidated = false
+      presentTaskStatus(taskMonitor.connectionFailed())
+      // The transport and quota response succeeded; only Desktop task evidence
+      // is missing. Preserve the last known quota while the monitor retries.
+      viewState.quotaTrack = quotaTrackState(from: quotaMonitor.accountQuota)
+      updateHoverDetail()
     case .task(.monitoringConnectionFailed):
       sharedRuntimeValidated = false
       presentTaskStatus(taskMonitor.connectionFailed())

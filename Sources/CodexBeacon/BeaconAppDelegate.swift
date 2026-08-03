@@ -854,6 +854,8 @@ private extension TaskEvent {
       "monitoring_connection_established(protocol_compatible=\(protocolCompatible))"
     case .monitoringRuntimeValidated:
       "monitoring_runtime_validated"
+    case .monitoringRuntimeEvidenceUnavailable:
+      "monitoring_runtime_evidence_unavailable"
     case .monitoringConnectionFailed:
       "monitoring_connection_failed"
     case .monitoringObservationBecameStale:

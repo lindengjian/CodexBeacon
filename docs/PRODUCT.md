@@ -177,7 +177,7 @@ After setup, only the Beacon remains. Settings can rerun diagnostics or repair t
 Codex Beacon uses:
 
 - The documented Codex App Server protocol for account quota and quota updates.
-- The documented Codex App Server runtime-state protocol over a shared Unix socket. Desktop adoption currently requires a version-gated private launch compatibility adapter and one Desktop restart.
+- The documented Codex App Server runtime-state protocol over a shared Unix socket. Desktop adoption currently requires a capability-validated private launch compatibility adapter and one Desktop restart; Beacon does not reject future bundled CLI versions by version string, and fails closed only when the resulting socket, protocol, passive-observer behavior, or shared Desktop runtime evidence cannot be verified.
 
 Codex Hooks may provide supplemental lifecycle hints, but they are not the source of truth: Hook input cannot identify the Desktop surface, does not report request-user-input waiting, and does not distinguish completed, failed, and interrupted turns. Codex Beacon will not parse private transcripts or rollout logs to fill those gaps.
 

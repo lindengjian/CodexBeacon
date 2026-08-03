@@ -26,6 +26,7 @@ public struct QuotaResetEvent: Equatable, Sendable {
 public enum TaskEvent: Equatable, Sendable {
   case monitoringConnectionEstablished(protocolCompatible: Bool)
   case monitoringRuntimeValidated
+  case monitoringRuntimeEvidenceUnavailable
   case monitoringConnectionFailed
   case monitoringObservationBecameStale
   case monitoringSnapshotRequested

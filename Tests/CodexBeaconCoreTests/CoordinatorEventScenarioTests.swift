@@ -105,4 +105,30 @@ struct CoordinatorEventScenarioTests {
 
     #expect(coordinator.viewState.status == .idle)
   }
+
+  @Test("missing Desktop evidence does not erase a successfully read quota")
+  func missingDesktopEvidencePreservesQuota() {
+    let coordinator = AppCoordinator(requiresSharedRuntimeEvidence: true)
+
+    coordinator.handle(
+      .task(.monitoringConnectionEstablished(protocolCompatible: true))
+    )
+    let quotaRequest = coordinator.drainAppServerRequests().first {
+      $0.method == "account/rateLimits/read"
+    }!
+    coordinator.handle(
+      .task(.appServerMessage("""
+        {"id":\(quotaRequest.id),"result":{"rateLimits":{"week":{"durationSeconds":604800,"usedPercent":1}}}}
+        """))
+    )
+
+    #expect(coordinator.viewState.quotaTrack.style == .gauge)
+    #expect(abs(coordinator.viewState.quotaTrack.fillFraction - 0.99) < 0.01)
+
+    coordinator.handle(.task(.monitoringRuntimeEvidenceUnavailable))
+
+    #expect(coordinator.viewState.status == .monitoringUnavailable)
+    #expect(coordinator.viewState.quotaTrack.style == .gauge)
+    #expect(abs(coordinator.viewState.quotaTrack.fillFraction - 0.99) < 0.01)
+  }
 }

@@ -4,8 +4,8 @@ import Testing
 @testable import CodexBeacon
 
 struct DesktopDaemonCompatibilityAdapterTests {
-  @Test("an adopted integration restores the current login opt-in without restarting its daemon")
-  func restoresCurrentLoginOptInWithoutRestartingDaemon() throws {
+  @Test("an adopted integration accepts a future bundled CLI without version gating")
+  func acceptsFutureBundledCLIWithoutVersionGating() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("CodexBeaconTests-\(UUID().uuidString)")
     defer { try? FileManager.default.removeItem(at: root) }
@@ -28,13 +28,13 @@ struct DesktopDaemonCompatibilityAdapterTests {
         return ""
       }
     )
-    let cliURL = URL(fileURLWithPath: "/Applications/Codex.app/Contents/Resources/codex")
+    let cliURL = URL(fileURLWithPath: "/Applications/Codex.app/Contents/Resources/codex-0.999.0-future")
 
-    #expect(adapter.activateForCurrentLogin(bundledCLIURL: cliURL, cliVersion: "0.146.0-alpha.3.1") == nil)
+    #expect(adapter.activateForCurrentLogin(bundledCLIURL: cliURL) == nil)
     #expect(launchctlCalls.map(\.first) == ["getenv", "bootout", "bootstrap", "setenv"])
     launchctlCalls.removeAll()
 
-    #expect(adapter.activateForCurrentLogin(bundledCLIURL: cliURL, cliVersion: "0.146.0-alpha.3.1") == nil)
+    #expect(adapter.activateForCurrentLogin(bundledCLIURL: cliURL) == nil)
     #expect(launchctlCalls == [["setenv", "CODEX_APP_SERVER_USE_LOCAL_DAEMON", "1"]])
 
     let data = try Data(contentsOf: launchAgentURL)
