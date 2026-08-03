@@ -4,7 +4,7 @@ set -euo pipefail
 
 script_directory=${0:A:h}
 repository_root=${script_directory:h}
-version=1.0.8
+version=1.0.9
 application_name=CodexBeacon.app
 application_bundle="${repository_root}/.build/${application_name}"
 staging_directory="${repository_root}/.build/dmg-root"

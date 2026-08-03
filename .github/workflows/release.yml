@@ -39,10 +39,18 @@ jobs:
         if: github.event_name == 'push'
         run: |
           if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release create "$GITHUB_REF_NAME" \
-              dist/CodexBeacon-*-arm64.dmg \
-              lindengjian-codex-beacon-*.tgz \
-              --generate-notes
+            notes_file="docs/releases/${GITHUB_REF_NAME}.md"
+            release_args=(
+              "$GITHUB_REF_NAME"
+              dist/CodexBeacon-*-arm64.dmg
+              lindengjian-codex-beacon-*.tgz
+            )
+            if [[ -f "$notes_file" ]]; then
+              release_args+=(--notes-file "$notes_file")
+            else
+              release_args+=(--generate-notes)
+            fi
+            gh release create "${release_args[@]}"
           fi
 
       - name: Publish npm package
